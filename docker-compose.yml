@@ -1,0 +1,192 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Data Warehouse
+  postgres:
+    image: postgres:15
+    container_name: oss_data_platform_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-oss_data_platform}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./storage/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oss_data_platform
+
+  # PostgreSQL - Baselinr Storage
+  baselinr_postgres:
+    image: postgres:15
+    container_name: oss_data_platform_baselinr
+    environment:
+      POSTGRES_USER: ${BASELINR_STORAGE_USER:-postgres}
+      POSTGRES_PASSWORD: ${BASELINR_STORAGE_PASSWORD:-postgres}
+      POSTGRES_DB: ${BASELINR_STORAGE_DB:-baselinr}
+    ports:
+      - "5433:5432"
+    volumes:
+      - baselinr_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BASELINR_STORAGE_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oss_data_platform
+
+  # Dagster Webserver
+  dagster_webserver:
+    image: dagster/dagster:latest
+    container_name: oss_data_platform_dagster_webserver
+    environment:
+      - DAGSTER_HOME=/opt/dagster/dagster_home
+      - DAGSTER_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-oss_data_platform}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./orchestration/dagster:/opt/dagster/dagster_home
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: dagster-webserver -h 0.0.0.0 -p 3000 -w /opt/dagster/dagster_home/workspace.yaml
+    networks:
+      - oss_data_platform
+
+  # Dagster Daemon
+  dagster_daemon:
+    image: dagster/dagster:latest
+    container_name: oss_data_platform_dagster_daemon
+    environment:
+      - DAGSTER_HOME=/opt/dagster/dagster_home
+      - DAGSTER_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-oss_data_platform}
+    volumes:
+      - ./orchestration/dagster:/opt/dagster/dagster_home
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: dagster-daemon run -w /opt/dagster/dagster_home/workspace.yaml
+    networks:
+      - oss_data_platform
+
+  # DataHub MySQL
+  datahub_mysql:
+    image: mysql:8.0
+    container_name: oss_data_platform_datahub_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: datahub
+      MYSQL_DATABASE: datahub
+    volumes:
+      - datahub_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oss_data_platform
+
+  # DataHub Elasticsearch
+  datahub_elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.9
+    container_name: oss_data_platform_datahub_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - datahub_elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oss_data_platform
+
+  # DataHub Kafka
+  datahub_kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: oss_data_platform_datahub_kafka
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: datahub_zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://datahub_kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - datahub_zookeeper
+    ports:
+      - "9092:9092"
+    networks:
+      - oss_data_platform
+
+  # DataHub Zookeeper
+  datahub_zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: oss_data_platform_datahub_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - oss_data_platform
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: oss_data_platform_prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - oss_data_platform
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: oss_data_platform_grafana
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - oss_data_platform
+
+volumes:
+  postgres_data:
+  baselinr_data:
+  datahub_mysql_data:
+  datahub_elasticsearch_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  oss_data_platform:
+    driver: bridge
+

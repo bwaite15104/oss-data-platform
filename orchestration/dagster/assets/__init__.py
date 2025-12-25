@@ -1,0 +1,2 @@
+"""Dagster assets package."""
+

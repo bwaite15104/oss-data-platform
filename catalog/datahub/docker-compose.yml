@@ -1,0 +1,30 @@
+# DataHub services
+# Note: This is a simplified version. For production, use the full DataHub quickstart
+
+version: '3.8'
+
+services:
+  datahub_gms:
+    image: linkedin/datahub-gms:latest
+    container_name: oss_data_platform_datahub_gms
+    environment:
+      - KAFKA_BOOTSTRAP_SERVER=datahub_kafka:29092
+      - ELASTICSEARCH_HOST=datahub_elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - MYSQL_HOST=datahub_mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USERNAME=root
+      - MYSQL_PASSWORD=datahub
+    ports:
+      - "8080:8080"
+    depends_on:
+      - datahub_mysql
+      - datahub_elasticsearch
+      - datahub_kafka
+    networks:
+      - oss_data_platform
+
+networks:
+  oss_data_platform:
+    external: true
+

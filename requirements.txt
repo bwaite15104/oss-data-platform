@@ -1,0 +1,30 @@
+# Core dependencies
+pydantic>=2.0.0
+pyyaml>=6.0.0
+click>=8.0.0
+
+# Data quality
+baselinr>=0.1.0
+
+# Orchestration
+dagster>=1.5.0
+dagster-webserver>=1.5.0
+dagster-postgres>=0.21.0
+
+# Transformation
+sqlmesh>=0.0.1
+
+# Ingestion
+dlt>=0.3.0
+
+# Catalog
+datahub>=0.12.0
+
+# Development dependencies (optional)
+# pytest>=7.0.0
+# pytest-cov>=4.0.0
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.0.0
+# isort>=5.12.0
+

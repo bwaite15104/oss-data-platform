@@ -1,0 +1,19 @@
+# Reusable quality thresholds
+
+thresholds:
+  drift_low: 5.0
+  drift_medium: 15.0
+  drift_high: 30.0
+  
+  freshness_hours: 24
+  availability: 99.9
+
+profiling:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  sample_ratio: 0.1
+
+drift_detection:
+  enabled: true
+  strategy: absolute_threshold
+

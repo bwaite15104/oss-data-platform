@@ -1,0 +1,17 @@
+gateways:
+  default:
+    connection:
+      type: postgres
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+      database: ${POSTGRES_DB}
+
+default_gateway: default
+
+model_defaults:
+  kind: VIEW
+  start: '2024-01-01'
+  cron: '@daily'
+

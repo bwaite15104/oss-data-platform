@@ -1,0 +1,32 @@
+# Global quality configuration
+
+profiling:
+  enabled: true
+  default_schedule: "0 2 * * *"  # Daily at 2 AM
+  default_sample_ratio: 0.1
+
+drift_detection:
+  enabled: true
+  default_strategy: absolute_threshold
+  default_thresholds:
+    low: 5.0
+    medium: 15.0
+    high: 30.0
+
+validation:
+  enabled: true
+  fail_on_error: true
+
+expectation_learning:
+  enabled: true
+  learning_window_days: 30
+  min_samples: 5
+
+anomaly_detection:
+  enabled: true
+  methods:
+    - control_limits
+    - iqr
+    - mad
+    - ewma
+

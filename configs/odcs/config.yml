@@ -1,0 +1,9 @@
+# Main ODCS configuration file
+# This combines connections, datasets, and quality config
+
+environment: ${ENVIRONMENT:-development}
+
+# Include other config files
+# In a real implementation, you might merge these programmatically
+# For now, we reference them separately
+

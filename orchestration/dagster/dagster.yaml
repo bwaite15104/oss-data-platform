@@ -1,0 +1,24 @@
+storage:
+  postgres:
+    postgres_db:
+      username:
+        env: POSTGRES_USER
+      password:
+        env: POSTGRES_PASSWORD
+      hostname:
+        env: POSTGRES_HOST
+      db_name:
+        env: POSTGRES_DB
+      port:
+        env: POSTGRES_PORT
+
+compute_logs:
+  module: dagster.core.storage.noop_compute_log_manager
+  class: NoOpComputeLogManager
+
+local_artifact_storage:
+  module: dagster.core.storage.root
+  class: LocalFileSystemArtifactStorage
+  config:
+    base_dir: /opt/dagster/dagster_home/storage
+

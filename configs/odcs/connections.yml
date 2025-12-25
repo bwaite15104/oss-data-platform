@@ -1,0 +1,19 @@
+connections:
+  postgres_warehouse:
+    type: postgres
+    host: ${POSTGRES_HOST}
+    port: ${POSTGRES_PORT}
+    database: ${POSTGRES_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    schema: public
+    
+  postgres_storage:
+    type: postgres
+    host: ${BASELINR_STORAGE_HOST}
+    port: ${BASELINR_STORAGE_PORT}
+    database: ${BASELINR_STORAGE_DB}
+    username: ${BASELINR_STORAGE_USER}
+    password: ${BASELINR_STORAGE_PASSWORD}
+    schema: public
+

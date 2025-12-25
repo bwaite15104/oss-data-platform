@@ -1,0 +1,32 @@
+# Reusable validation rules
+
+validation_rules:
+  # Not null checks
+  - type: not_null
+    columns: [customer_id, email, first_name, last_name, created_at]
+    description: Core customer fields must not be null
+    
+  # Format validation
+  - type: format
+    column: email
+    pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+    description: Email must be valid format
+    
+  # Uniqueness
+  - type: unique
+    columns: [email]
+    description: Email must be unique
+    
+  # Range validation (for orders)
+  - type: range
+    column: total_amount
+    min_value: 0
+    description: Order total must be non-negative
+    
+  # Referential integrity
+  - type: referential_integrity
+    column: customer_id
+    reference_table: customers
+    reference_column: customer_id
+    description: Order customer_id must reference valid customer
+

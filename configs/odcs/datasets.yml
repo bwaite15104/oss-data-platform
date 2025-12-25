@@ -1,0 +1,15 @@
+datasets:
+  - name: customers
+    source: postgres_warehouse
+    schema: public
+    table: customers
+    contract: contracts/contracts/customers.yml
+    owner: data-engineering@company.com
+    
+  - name: orders
+    source: postgres_warehouse
+    schema: public
+    table: orders
+    contract: contracts/contracts/orders.yml
+    owner: data-engineering@company.com
+
