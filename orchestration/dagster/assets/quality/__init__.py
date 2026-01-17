@@ -1,16 +1,29 @@
 """Quality assets."""
 
+from pathlib import Path
 from dagster import asset
-from baselinr.integrations.dagster import build_baselinr_definitions
 
-# Build Baselinr definitions from generated config
-baselinr_defs = build_baselinr_definitions(
-    config_path="configs/generated/baselinr/baselinr_config.yml",
-    asset_prefix="quality",
-    job_name="quality_checks",
-    enable_sensor=True,
-)
+# Check if Baselinr config exists before loading
+config_path = Path("/app/configs/generated/baselinr/baselinr_config.yml")
 
-# Export Baselinr assets
-quality_assets = baselinr_defs.assets if hasattr(baselinr_defs, 'assets') else []
+baselinr_defs = None
+quality_assets = []
+
+if config_path.exists():
+    from baselinr.integrations.dagster import build_baselinr_definitions
+    
+    # Build Baselinr definitions from generated config
+    baselinr_defs = build_baselinr_definitions(
+        config_path=str(config_path),
+        asset_prefix="quality",
+        job_name="quality_checks",
+        enable_sensor=True,
+    )
+    
+    # Export Baselinr assets
+    quality_assets = baselinr_defs.assets if hasattr(baselinr_defs, 'assets') else []
+else:
+    # Return empty list if config doesn't exist yet
+    # Run `make generate-configs` to create the config file
+    quality_assets = []
 

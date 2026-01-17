@@ -90,7 +90,14 @@ flowchart TB
    make docker-up
    ```
 
-6. **Start Dagster**
+6. **Ingest NBA data**
+   ```bash
+   # Use Dagster to run NBA ingestion assets
+   # Or run the dlt pipeline directly:
+   python ingestion/dlt/pipelines/nba_stats.py
+   ```
+
+7. **Start Dagster**
    ```bash
    cd orchestration/dagster
    dagster dev
@@ -98,10 +105,10 @@ flowchart TB
 
 ## Contract Composition Workflow
 
-1. **Define schema**: Create schema in `contracts/schemas/customers.yml`
-2. **Define quality rules**: Create or reference quality rules in `contracts/quality/rules.yml`
-3. **Compose contract**: Run `make compose-contracts` or `python contracts/composer.py --schema customers --quality rules --output customers`
-4. **Reference in config**: `configs/odcs/datasets.yml` references `contracts/contracts/customers.yml`
+1. **Define schema**: Create schema in `contracts/schemas/nba_games.yml`
+2. **Define quality rules**: Create or reference quality rules in `contracts/quality/nba_rules.yml`
+3. **Compose contract**: Run `make compose-contracts` or `python contracts/composer.py --schema nba_games --quality nba_rules --output nba_games`
+4. **Reference in config**: `configs/odcs/datasets.yml` references `contracts/contracts/nba_games.yml`
 5. **Generate tool configs**: Run `make generate-configs` which:
    - Composes contracts if needed
    - Generates tool configs using adapters that read composed contracts
@@ -126,6 +133,17 @@ oss-data-platform/
 ├── monitoring/         # Observability (Prometheus, Grafana)
 └── storage/            # Data warehouse configs
 ```
+
+## NBA Data Example
+
+This platform includes a complete NBA data ingestion example:
+
+- **ODCS Contracts**: Schemas and quality rules for NBA data
+- **dlt Pipeline**: NBA Stats API integration
+- **Dagster Assets**: Orchestrated NBA data ingestion
+- **Data Quality**: Baselinr monitoring for NBA datasets
+
+See [docs/guides/nba-ingestion.md](docs/guides/nba-ingestion.md) for the NBA ingestion guide.
 
 ## Development
 

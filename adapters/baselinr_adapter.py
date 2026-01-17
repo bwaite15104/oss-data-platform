@@ -3,6 +3,8 @@ Baselinr adapter - converts ODCS contracts to Baselinr YAML configuration.
 """
 
 import logging
+import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -24,13 +26,13 @@ class BaselinrAdapter(ConfigAdapter):
             raise ValueError("No datasets defined in ODCS config")
         
         source_dataset = self.odcs_config.datasets[0]
-        source_conn = self._convert_connection(source_dataset.source)
+        source_conn = self._convert_connection_for_baselinr(source_dataset.source)
         
         # Get storage connection (use postgres_storage if available, else use source)
         storage_conn_name = "postgres_storage"
         if storage_conn_name not in self.odcs_config.connections:
             storage_conn_name = source_dataset.source
-        storage_conn = self._convert_connection(storage_conn_name)
+        storage_conn = self._convert_connection_for_baselinr(storage_conn_name)
         
         # Build profiling tables from datasets
         profiling_tables = []
@@ -94,6 +96,52 @@ class BaselinrAdapter(ConfigAdapter):
         
         logger.info(f"Generated Baselinr config: {output_file}")
     
+    def _convert_connection_for_baselinr(self, conn_name: str) -> Dict[str, Any]:
+        """
+        Convert ODCS connection to Baselinr format, resolving env var placeholders.
+        
+        Baselinr expects integer ports, so we resolve env vars here.
+        """
+        conn_dict = self._convert_connection(conn_name)
+        
+        # Resolve environment variables in connection dict
+        resolved_dict = {}
+        for key, value in conn_dict.items():
+            if isinstance(value, str):
+                # Check if it's an env var placeholder like ${VAR_NAME}
+                match = re.match(r'\$\{([^}]+)\}', value)
+                if match:
+                    env_var = match.group(1)
+                    # Try to get from environment, with defaults for common vars
+                    defaults = {
+                        "POSTGRES_PORT": "5432",
+                        "POSTGRES_HOST": "localhost",
+                        "POSTGRES_DB": "oss_data_platform",
+                        "POSTGRES_USER": "postgres",
+                        "POSTGRES_PASSWORD": "postgres",
+                        "BASELINR_STORAGE_PORT": "5433",
+                        "BASELINR_STORAGE_HOST": "localhost",
+                        "BASELINR_STORAGE_DB": "baselinr",
+                        "BASELINR_STORAGE_USER": "postgres",
+                        "BASELINR_STORAGE_PASSWORD": "postgres",
+                    }
+                    resolved_value = os.getenv(env_var, defaults.get(env_var, value))
+                    resolved_dict[key] = resolved_value
+                else:
+                    resolved_dict[key] = value
+            else:
+                resolved_dict[key] = value
+        
+        # Convert port to int if it's a string
+        if "port" in resolved_dict and resolved_dict["port"] is not None:
+            try:
+                resolved_dict["port"] = int(resolved_dict["port"])
+            except (ValueError, TypeError):
+                # If conversion fails, use default
+                resolved_dict["port"] = 5432
+        
+        return resolved_dict
+    
     def _convert_validation_rule(self, rule: ODCSValidationRule, table_name: str) -> Dict[str, Any]:
         """Convert ODCS validation rule to Baselinr format."""
         baselinr_rule = {
@@ -130,7 +178,7 @@ class BaselinrAdapter(ConfigAdapter):
             if rule.enum_values:
                 baselinr_rule["values"] = rule.enum_values
         elif rule.type == "referential_integrity":
-            baselinr_rule["type"] = "referential_integrity"
+            baselinr_rule["type"] = "referential"  # Baselinr uses "referential" not "referential_integrity"
             baselinr_rule["column"] = rule.column
             baselinr_rule["reference_table"] = rule.reference_table
             baselinr_rule["reference_column"] = rule.reference_column

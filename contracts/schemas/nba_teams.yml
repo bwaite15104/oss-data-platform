@@ -1,0 +1,83 @@
+name: nba_teams
+description: NBA team information
+
+columns:
+  - name: team_id
+    type: integer
+    nullable: false
+    primary_key: true
+    description: Unique team identifier
+    
+  - name: team_name
+    type: string
+    nullable: false
+    description: Team full name
+    
+  - name: team_abbreviation
+    type: string
+    nullable: false
+    unique: true
+    description: Team abbreviation (e.g., "LAL", "BOS")
+    
+  - name: city
+    type: string
+    nullable: false
+    description: Team city
+    
+  - name: nickname
+    type: string
+    nullable: true
+    description: Team nickname
+    
+  - name: conference
+    type: string
+    nullable: false
+    description: Conference (East, West)
+    
+  - name: division
+    type: string
+    nullable: false
+    description: Division name
+    
+  - name: arena
+    type: string
+    nullable: true
+    description: Home arena name
+    
+  - name: arena_capacity
+    type: integer
+    nullable: true
+    description: Arena capacity
+    
+  - name: founded
+    type: integer
+    nullable: true
+    description: Year team was founded
+    
+  - name: is_active
+    type: boolean
+    nullable: false
+    default: true
+    description: Whether team is currently active
+    
+  - name: created_at
+    type: timestamp
+    nullable: false
+    description: Record creation timestamp
+    
+  - name: updated_at
+    type: timestamp
+    nullable: true
+    description: Last update timestamp
+
+primary_key:
+  - team_id
+
+indexes:
+  - columns: [team_abbreviation]
+    unique: true
+  - columns: [conference]
+  - columns: [division]
+
+
+

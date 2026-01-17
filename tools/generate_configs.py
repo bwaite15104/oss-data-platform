@@ -9,8 +9,11 @@ This tool:
 
 import argparse
 import logging
+import os
 import subprocess
 import sys
+import tempfile
+import yaml
 from pathlib import Path
 
 # Add parent directory to path
@@ -104,35 +107,76 @@ def main():
     odcs_config_path = Path(args.odcs_config)
     
     # Merge ODCS config files
-    # In a real implementation, you'd merge connections.yml, datasets.yml, quality.yml
-    # For now, we'll use datasets.yml as the main file and expect it to reference others
+    # Load and merge connections.yml, datasets.yml, and quality.yml
+    config_dir = odcs_config_path.parent
     
-    for tool_name in tools_to_generate:
-        if tool_name not in adapters:
-            logger.warning(f"Unknown tool: {tool_name}")
-            continue
-        
-        adapter_class, output_filename = adapters[tool_name]
-        
-        try:
-            adapter = adapter_class(str(odcs_config_path))
-            
-            if not adapter.validate():
-                logger.error(f"{tool_name}: Invalid ODCS config")
+    import yaml
+    
+    # Load all config files
+    connections_path = config_dir / "connections.yml"
+    datasets_path = odcs_config_path
+    quality_path = config_dir / "quality.yml"
+    
+    merged_config = {}
+    
+    # Load connections
+    if connections_path.exists():
+        with open(connections_path, 'r') as f:
+            connections_data = yaml.safe_load(f) or {}
+            merged_config.update(connections_data)
+    else:
+        logger.warning(f"Connections file not found: {connections_path}")
+        merged_config["connections"] = {}
+    
+    # Load datasets
+    with open(datasets_path, 'r') as f:
+        datasets_data = yaml.safe_load(f) or {}
+        merged_config.update(datasets_data)
+    
+    # Load quality (optional)
+    if quality_path.exists():
+        with open(quality_path, 'r') as f:
+            quality_data = yaml.safe_load(f) or {}
+            if "quality" in quality_data:
+                merged_config["quality"] = quality_data["quality"]
+    
+    # Write merged config to temp file for adapters
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as tmp_file:
+        yaml.dump(merged_config, tmp_file)
+        tmp_config_path = tmp_file.name
+    
+    try:
+        for tool_name in tools_to_generate:
+            if tool_name not in adapters:
+                logger.warning(f"Unknown tool: {tool_name}")
                 continue
             
-            output_path = output_dir / tool_name / output_filename
-            adapter.generate_config(str(output_path))
-            logger.info(f"✅ {tool_name}: Generated {output_path}")
+            adapter_class, output_filename = adapters[tool_name]
             
-        except Exception as e:
-            logger.error(f"❌ {tool_name}: {e}")
-            continue
+            try:
+                adapter = adapter_class(tmp_config_path)
+                
+                if not adapter.validate():
+                    logger.error(f"{tool_name}: Invalid ODCS config")
+                    continue
+                
+                output_path = output_dir / tool_name / output_filename
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                adapter.generate_config(str(output_path))
+                logger.info(f"✅ {tool_name}: Generated {output_path}")
+                
+            except Exception as e:
+                logger.error(f"❌ {tool_name}: {e}")
+                continue
+    finally:
+        # Clean up temp file
+        if os.path.exists(tmp_config_path):
+            os.unlink(tmp_config_path)
     
     logger.info("Config generation complete")
 
 
 if __name__ == "__main__":
-    import os
     sys.exit(main())
 

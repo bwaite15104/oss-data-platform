@@ -1,0 +1,96 @@
+name: nba_players
+description: NBA player information and career statistics
+
+columns:
+  - name: player_id
+    type: integer
+    nullable: false
+    primary_key: true
+    description: Unique player identifier
+    
+  - name: player_name
+    type: string
+    nullable: false
+    description: Player full name
+    
+  - name: first_name
+    type: string
+    nullable: true
+    description: Player first name
+    
+  - name: last_name
+    type: string
+    nullable: true
+    description: Player last name
+    
+  - name: position
+    type: string
+    nullable: true
+    description: Player position (PG, SG, SF, PF, C)
+    
+  - name: height
+    type: string
+    nullable: true
+    description: Player height (e.g., "6-8")
+    
+  - name: weight
+    type: integer
+    nullable: true
+    description: Player weight in pounds
+    
+  - name: age
+    type: integer
+    nullable: true
+    description: Player age
+    
+  - name: birth_date
+    type: date
+    nullable: true
+    description: Player birth date
+    
+  - name: country
+    type: string
+    nullable: true
+    description: Player country of origin
+    
+  - name: team_id
+    type: integer
+    nullable: true
+    description: Current team ID
+    
+  - name: jersey_number
+    type: integer
+    nullable: true
+    description: Player jersey number
+    
+  - name: years_pro
+    type: integer
+    nullable: true
+    description: Years as professional
+    
+  - name: is_active
+    type: boolean
+    nullable: false
+    default: true
+    description: Whether player is currently active
+    
+  - name: created_at
+    type: timestamp
+    nullable: false
+    description: Record creation timestamp
+    
+  - name: updated_at
+    type: timestamp
+    nullable: true
+    description: Last update timestamp
+
+primary_key:
+  - player_id
+
+indexes:
+  - columns: [player_name]
+  - columns: [team_id]
+  - columns: [position]
+
+
+

@@ -1,0 +1,250 @@
+version: '1.0'
+name: nba_players
+schema:
+  name: nba_players
+  columns:
+  - name: player_id
+    type: integer
+    nullable: false
+    primary_key: true
+    unique: false
+    description: Unique player identifier
+  - name: player_name
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Player full name
+  - name: first_name
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player first name
+  - name: last_name
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player last name
+  - name: position
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player position (PG, SG, SF, PF, C)
+  - name: height
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player height (e.g., "6-8")
+  - name: weight
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player weight in pounds
+  - name: age
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player age
+  - name: birth_date
+    type: date
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player birth date
+  - name: country
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player country of origin
+  - name: team_id
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Current team ID
+  - name: jersey_number
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player jersey number
+  - name: years_pro
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Years as professional
+  - name: is_active
+    type: boolean
+    nullable: false
+    primary_key: false
+    unique: false
+    default: true
+    description: Whether player is currently active
+  - name: created_at
+    type: timestamp
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Record creation timestamp
+  - name: updated_at
+    type: timestamp
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Last update timestamp
+  primary_key:
+  - player_id
+  indexes:
+  - columns:
+    - player_name
+  - columns:
+    - team_id
+  - columns:
+    - position
+  description: NBA player information and career statistics
+quality:
+  validation_rules:
+  - type: not_null
+    columns:
+    - game_id
+    - game_date
+    - season
+    - home_team_id
+    - away_team_id
+    description: Core game fields must not be null
+  - type: range
+    column: home_score
+    min_value: 0
+    description: Home score must be non-negative
+  - type: range
+    column: away_score
+    min_value: 0
+    description: Away score must be non-negative
+  - type: referential_integrity
+    column: home_team_id
+    reference_table: nba_teams
+    reference_column: team_id
+    description: Home team must reference valid team
+  - type: referential_integrity
+    column: away_team_id
+    reference_table: nba_teams
+    reference_column: team_id
+    description: Away team must reference valid team
+  - type: not_null
+    columns:
+    - player_id
+    - player_name
+    description: Core player fields must not be null
+  - type: range
+    column: weight
+    min_value: 100
+    max_value: 400
+    description: Player weight must be reasonable
+  - type: range
+    column: age
+    min_value: 18
+    max_value: 50
+    description: Player age must be reasonable
+  - type: referential_integrity
+    column: team_id
+    reference_table: nba_teams
+    reference_column: team_id
+    description: Player team must reference valid team
+  - type: not_null
+    columns:
+    - team_id
+    - team_name
+    - team_abbreviation
+    - conference
+    - division
+    description: Core team fields must not be null
+  - type: unique
+    columns:
+    - team_abbreviation
+    description: Team abbreviation must be unique
+  - type: not_null
+    columns:
+    - game_id
+    - player_id
+    - team_id
+    description: Core player game stats fields must not be null
+  - type: range
+    column: points
+    min_value: 0
+    max_value: 150
+    description: Points must be reasonable (single game max ~100, but allow buffer)
+  - type: range
+    column: field_goal_percentage
+    min_value: 0
+    max_value: 1
+    description: Field goal percentage must be between 0 and 1
+  - type: range
+    column: three_point_percentage
+    min_value: 0
+    max_value: 1
+    description: Three-point percentage must be between 0 and 1
+  - type: range
+    column: free_throw_percentage
+    min_value: 0
+    max_value: 1
+    description: Free throw percentage must be between 0 and 1
+  - type: referential_integrity
+    column: game_id
+    reference_table: nba_games
+    reference_column: game_id
+    description: Player game stats must reference valid game
+  - type: referential_integrity
+    column: player_id
+    reference_table: nba_players
+    reference_column: player_id
+    description: Player game stats must reference valid player
+  - type: referential_integrity
+    column: team_id
+    reference_table: nba_teams
+    reference_column: team_id
+    description: Player game stats must reference valid team
+  - type: not_null
+    columns:
+    - game_id
+    - team_id
+    - points
+    description: Core team game stats fields must not be null
+  - type: range
+    column: points
+    min_value: 0
+    max_value: 200
+    description: Team points must be reasonable
+  - type: range
+    column: field_goal_percentage
+    min_value: 0
+    max_value: 1
+    description: Team field goal percentage must be between 0 and 1
+  - type: referential_integrity
+    column: game_id
+    reference_table: nba_games
+    reference_column: game_id
+    description: Team game stats must reference valid game
+  - type: referential_integrity
+    column: team_id
+    reference_table: nba_teams
+    reference_column: team_id
+    description: Team game stats must reference valid team
+  thresholds:
+    drift_low: 5.0
+    drift_medium: 15.0
+    drift_high: 30.0
+    freshness_hours: 24
+    availability: 99.9
+  profiling_enabled: true
+  drift_detection_enabled: true
+  drift_detection_strategy: absolute_threshold
+metadata:
+  owner: data-engineering@company.com

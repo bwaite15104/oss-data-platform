@@ -26,7 +26,7 @@ baselinr profile --config configs/generated/baselinr/baselinr_config.yml
 ### Detect Drift
 
 ```bash
-baselinr drift --config configs/generated/baselinr/baselinr_config.yml --dataset customers
+baselinr drift --config configs/generated/baselinr/baselinr_config.yml --dataset games
 ```
 
 ### Start Quality Studio

@@ -1,0 +1,34 @@
+2026-01-17 17:48:57 +0000 - dagster - DEBUG - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - 607 - LOGS_CAPTURED - Started capturing logs in process (pid: 607).
+2026-01-17 17:48:57 +0000 - dagster - DEBUG - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - 607 - nba_todays_games - STEP_START - Started execution of step "nba_todays_games".
+2026-01-17 17:48:57 +0000 - dagster - INFO - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - nba_todays_games - Starting today's NBA games extraction from CDN...
+INFO:ingestion.dlt.pipelines.nba_stats:Starting today's games extraction from CDN...
+INFO:ingestion.dlt.pipelines.nba_stats:Fetching scoreboard from: https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json
+INFO:ingestion.dlt.pipelines.nba_stats:Scoreboard response status: 200
+INFO:ingestion.dlt.pipelines.nba_stats:Found 9 games for 2026-01-17
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Utah Jazz @ Dallas Mavericks
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Boston Celtics @ Atlanta Hawks
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Indiana Pacers @ Detroit Pistons
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Phoenix Suns @ New York Knicks
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Oklahoma City Thunder @ Miami Heat
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Minnesota Timberwolves @ San Antonio Spurs
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Charlotte Hornets @ Golden State Warriors
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Washington Wizards @ Denver Nuggets
+INFO:ingestion.dlt.pipelines.nba_stats:  Game: Los Angeles Lakers @ Portland Trail Blazers
+INFO:ingestion.dlt.pipelines.nba_stats:Today's games extraction complete!
+2026-01-17 17:48:57,543|[WARNING]|607|137132701608832|dlt|validate.py|verify_normalized_table:91|In schema `nba_stats`: The following columns in table 'todays_games' did not receive any data during this load and therefore could not have their types inferred:
+  - winner_team_id
+
+Unless type hints are provided, these columns will not be materialized in the destination.
+One way to provide type hints is to use the 'columns' argument in the '@dlt.resource' decorator.  For example:
+
+@dlt.resource(columns={'winner_team_id': {'data_type': 'text'}})
+
+2026-01-17 17:48:57 +0000 - dagster - INFO - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - nba_todays_games - Today's NBA games ingested: Pipeline nba_stats load step completed in 0.10 seconds
+1 load package(s) were loaded to destination postgres and into dataset nba
+The postgres destination used postgresql://postgres:***@postgres:5432/oss_data_platform location to store data
+Load package 1768672137.4331236 is LOADED and contains no failed jobs
+2026-01-17 17:48:57 +0000 - dagster - DEBUG - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - 607 - nba_todays_games - STEP_OUTPUT - Yielded output "result" of type "dict". (Type check passed).
+2026-01-17 17:48:57 +0000 - dagster - DEBUG - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - nba_todays_games - Writing file at: /opt/dagster/dagster_home/storage/nba_todays_games using PickledObjectFilesystemIOManager...
+2026-01-17 17:48:57 +0000 - dagster - DEBUG - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - 607 - nba_todays_games - ASSET_MATERIALIZATION - Materialized value nba_todays_games.
+2026-01-17 17:48:57 +0000 - dagster - DEBUG - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - 607 - nba_todays_games - HANDLED_OUTPUT - Handled output "result" using IO manager "io_manager"
+2026-01-17 17:48:57 +0000 - dagster - DEBUG - __ASSET_JOB - f8482709-3f4c-435c-a6c1-13b714d10acf - 607 - nba_todays_games - STEP_SUCCESS - Finished execution of step "nba_todays_games" in 534ms.

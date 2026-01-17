@@ -16,8 +16,8 @@ Contracts are composed from modular components:
 Create a schema file in `contracts/schemas/`:
 
 ```yaml
-# contracts/schemas/customers.yml
-name: customers
+# contracts/schemas/nba_games.yml
+name: nba_games
 columns:
   - name: customer_id
     type: integer
@@ -45,7 +45,7 @@ validation_rules:
 Run the composer:
 
 ```bash
-python contracts/composer.py --schema customers --quality rules --output customers
+python contracts/composer.py --schema nba_games --quality nba_rules --output nba_games
 ```
 
 Or compose all:
@@ -60,8 +60,8 @@ Reference the composed contract in `configs/odcs/datasets.yml`:
 
 ```yaml
 datasets:
-  - name: customers
-    contract: contracts/contracts/customers.yml
+  - name: nba_games
+    contract: contracts/contracts/nba_games.yml
     # ...
 ```
 

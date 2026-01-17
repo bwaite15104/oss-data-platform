@@ -1,0 +1,206 @@
+2026-01-17 17:21:35 +0000 - dagster - DEBUG - __ASSET_JOB - 2c92ec05-920a-4ff6-9f41-5a7e941d4486 - 6786 - LOGS_CAPTURED - Started capturing logs in process (pid: 6786).
+2026-01-17 17:21:35 +0000 - dagster - DEBUG - __ASSET_JOB - 2c92ec05-920a-4ff6-9f41-5a7e941d4486 - 6786 - nba_teams - STEP_START - Started execution of step "nba_teams".
+2026-01-17 17:21:36 +0000 - dagster - ERROR - __ASSET_JOB - 2c92ec05-920a-4ff6-9f41-5a7e941d4486 - nba_teams - NBA teams ingestion failed: Pipeline execution failed at `step=sync` with exception:
+
+<class 'dlt.common.configuration.exceptions.ConfigFieldMissingException'>
+Missing 1 field(s) in configuration `PostgresClientConfiguration`: `credentials`
+field `credentials` is itself a configuration `PostgresCredentials` with missing field(s): `database`, `password`, `username`, `host`
+  for field `database` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__DATABASE)
+    (Environment Variables, NBA_STATS__CREDENTIALS__DATABASE)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__DATABASE)
+    (Environment Variables, DESTINATION__CREDENTIALS__DATABASE)
+    (Environment Variables, CREDENTIALS__DATABASE)
+  for field `password` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PASSWORD)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__PASSWORD)
+    (Environment Variables, NBA_STATS__CREDENTIALS__PASSWORD)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__PASSWORD)
+    (Environment Variables, DESTINATION__CREDENTIALS__PASSWORD)
+    (Environment Variables, CREDENTIALS__PASSWORD)
+  for field `username` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__USERNAME)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__USERNAME)
+    (Environment Variables, NBA_STATS__CREDENTIALS__USERNAME)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__USERNAME)
+    (Environment Variables, DESTINATION__CREDENTIALS__USERNAME)
+    (Environment Variables, CREDENTIALS__USERNAME)
+  for field `host` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__HOST)
+    (Environment Variables, NBA_STATS__CREDENTIALS__HOST)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__HOST)
+    (Environment Variables, DESTINATION__CREDENTIALS__HOST)
+    (Environment Variables, CREDENTIALS__HOST)
+
+NOTE: following fields in `PostgresClientConfiguration` got resolved: `csv_format`
+Provider `secrets.toml` probed but not found the following locations:
+	- /var/dlt/secrets.toml
+	- /app/.dlt/secrets.toml
+WARNING: provider `secrets.toml` is empty. Locations (i.e., files) are missing or empty.
+Provider `config.toml` probed but not found the following locations:
+	- /var/dlt/config.toml
+	- /app/.dlt/config.toml
+WARNING: provider `config.toml` is empty. Locations (i.e., files) are missing or empty.
+
+WARNING: Your run dir (/app) is different from directory of your pipeline script (/usr/local/lib/python3.11/site-packages/dagster).
+If you keep `.dlt` folder with secret files in the same directory as your pipeline script but run your script or a dlt cli command from some other folder, secrets/configs will not be found.
+Learn more: https://dlthub.com/docs/general-usage/credentials/
+
+2026-01-17 17:21:36 +0000 - dagster - ERROR - __ASSET_JOB - 2c92ec05-920a-4ff6-9f41-5a7e941d4486 - 6786 - nba_teams - STEP_FAILURE - Execution of step "nba_teams" failed.
+
+dagster._core.errors.DagsterExecutionStepExecutionError: Error occurred while executing op "nba_teams"::
+
+dlt.pipeline.exceptions.PipelineStepFailed: Pipeline execution failed at `step=sync` with exception:
+
+<class 'dlt.common.configuration.exceptions.ConfigFieldMissingException'>
+Missing 1 field(s) in configuration `PostgresClientConfiguration`: `credentials`
+field `credentials` is itself a configuration `PostgresCredentials` with missing field(s): `database`, `password`, `username`, `host`
+  for field `database` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__DATABASE)
+    (Environment Variables, NBA_STATS__CREDENTIALS__DATABASE)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__DATABASE)
+    (Environment Variables, DESTINATION__CREDENTIALS__DATABASE)
+    (Environment Variables, CREDENTIALS__DATABASE)
+  for field `password` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PASSWORD)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__PASSWORD)
+    (Environment Variables, NBA_STATS__CREDENTIALS__PASSWORD)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__PASSWORD)
+    (Environment Variables, DESTINATION__CREDENTIALS__PASSWORD)
+    (Environment Variables, CREDENTIALS__PASSWORD)
+  for field `username` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__USERNAME)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__USERNAME)
+    (Environment Variables, NBA_STATS__CREDENTIALS__USERNAME)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__USERNAME)
+    (Environment Variables, DESTINATION__CREDENTIALS__USERNAME)
+    (Environment Variables, CREDENTIALS__USERNAME)
+  for field `host` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__HOST)
+    (Environment Variables, NBA_STATS__CREDENTIALS__HOST)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__HOST)
+    (Environment Variables, DESTINATION__CREDENTIALS__HOST)
+    (Environment Variables, CREDENTIALS__HOST)
+
+NOTE: following fields in `PostgresClientConfiguration` got resolved: `csv_format`
+Provider `secrets.toml` probed but not found the following locations:
+	- /var/dlt/secrets.toml
+	- /app/.dlt/secrets.toml
+WARNING: provider `secrets.toml` is empty. Locations (i.e., files) are missing or empty.
+Provider `config.toml` probed but not found the following locations:
+	- /var/dlt/config.toml
+	- /app/.dlt/config.toml
+WARNING: provider `config.toml` is empty. Locations (i.e., files) are missing or empty.
+
+WARNING: Your run dir (/app) is different from directory of your pipeline script (/usr/local/lib/python3.11/site-packages/dagster).
+If you keep `.dlt` folder with secret files in the same directory as your pipeline script but run your script or a dlt cli command from some other folder, secrets/configs will not be found.
+Learn more: https://dlthub.com/docs/general-usage/credentials/
+
+
+Stack Trace:
+  File "/usr/local/lib/python3.11/site-packages/dagster/_core/execution/plan/utils.py", line 57, in op_execution_error_boundary
+    yield
+  File "/usr/local/lib/python3.11/site-packages/dagster/_utils/__init__.py", line 394, in iterate_with_context
+    next_output = next(iterator)
+                  ^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dagster/_core/execution/plan/compute_generator.py", line 135, in _coerce_op_compute_fn_to_iterator
+    result = invoke_compute_fn(
+             ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dagster/_core/execution/plan/compute_generator.py", line 115, in invoke_compute_fn
+    return fn(context, **args_to_pass) if context_arg_provided else fn(**args_to_pass)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/dagster/dagster_home/assets/ingestion/nba.py", line 44, in nba_teams
+    load_info = pipeline.run([nba_teams_resource()])
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/pipeline/pipeline.py", line 224, in _wrap
+    step_info = f(self, *args, **kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/pipeline/pipeline.py", line 272, in _wrap
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/pipeline/pipeline.py", line 714, in run
+    self._sync_destination(destination, staging, dataset_name)
+  File "/usr/local/lib/python3.11/site-packages/dlt/pipeline/pipeline.py", line 178, in _wrap
+    rv = f(self, *args, **kwargs)
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/pipeline/pipeline.py", line 884, in _sync_destination
+    raise PipelineStepFailed(self, "sync", None, ex, None) from ex
+
+The above exception was caused by the following exception:
+dlt.common.configuration.exceptions.ConfigFieldMissingException: Missing 1 field(s) in configuration `PostgresClientConfiguration`: `credentials`
+field `credentials` is itself a configuration `PostgresCredentials` with missing field(s): `database`, `password`, `username`, `host`
+  for field `database` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__DATABASE)
+    (Environment Variables, NBA_STATS__CREDENTIALS__DATABASE)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__DATABASE)
+    (Environment Variables, DESTINATION__CREDENTIALS__DATABASE)
+    (Environment Variables, CREDENTIALS__DATABASE)
+  for field `password` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PASSWORD)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__PASSWORD)
+    (Environment Variables, NBA_STATS__CREDENTIALS__PASSWORD)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__PASSWORD)
+    (Environment Variables, DESTINATION__CREDENTIALS__PASSWORD)
+    (Environment Variables, CREDENTIALS__PASSWORD)
+  for field `username` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__USERNAME)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__USERNAME)
+    (Environment Variables, NBA_STATS__CREDENTIALS__USERNAME)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__USERNAME)
+    (Environment Variables, DESTINATION__CREDENTIALS__USERNAME)
+    (Environment Variables, CREDENTIALS__USERNAME)
+  for field `host` the following (config provider, key) were tried in order:
+    (Environment Variables, NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST)
+    (Environment Variables, NBA_STATS__DESTINATION__CREDENTIALS__HOST)
+    (Environment Variables, NBA_STATS__CREDENTIALS__HOST)
+    (Environment Variables, DESTINATION__POSTGRES__CREDENTIALS__HOST)
+    (Environment Variables, DESTINATION__CREDENTIALS__HOST)
+    (Environment Variables, CREDENTIALS__HOST)
+
+NOTE: following fields in `PostgresClientConfiguration` got resolved: `csv_format`
+Provider `secrets.toml` probed but not found the following locations:
+	- /var/dlt/secrets.toml
+	- /app/.dlt/secrets.toml
+WARNING: provider `secrets.toml` is empty. Locations (i.e., files) are missing or empty.
+Provider `config.toml` probed but not found the following locations:
+	- /var/dlt/config.toml
+	- /app/.dlt/config.toml
+WARNING: provider `config.toml` is empty. Locations (i.e., files) are missing or empty.
+
+WARNING: Your run dir (/app) is different from directory of your pipeline script (/usr/local/lib/python3.11/site-packages/dagster).
+If you keep `.dlt` folder with secret files in the same directory as your pipeline script but run your script or a dlt cli command from some other folder, secrets/configs will not be found.
+Learn more: https://dlthub.com/docs/general-usage/credentials/
+
+
+Stack Trace:
+  File "/usr/local/lib/python3.11/site-packages/dlt/pipeline/pipeline.py", line 789, in _sync_destination
+    remote_state = self._restore_state_from_destination()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/pipeline/pipeline.py", line 1609, in _restore_state_from_destination
+    with self._get_destination_clients(schema)[0] as job_client:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/pipeline/pipeline.py", line 1358, in _get_destination_clients
+    destination_client, staging_client = get_destination_clients(
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/dataset/utils.py", line 85, in get_destination_clients
+    client = destination.client(schema, initial_config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/common/destination/reference.py", line 183, in client
+    config = self.configuration(initial_config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/common/destination/reference.py", line 170, in configuration
+    config = resolve_configuration(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/common/configuration/resolve.py", line 78, in resolve_configuration
+    return _resolve_configuration(config, sections, (), explicit_value, accept_partial)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/dlt/common/configuration/resolve.py", line 186, in _resolve_configuration
+    _resolve_config_fields(
+  File "/usr/local/lib/python3.11/site-packages/dlt/common/configuration/resolve.py", line 372, in _resolve_config_fields
+    raise ConfigFieldMissingException(config, unresolved_fields)
+

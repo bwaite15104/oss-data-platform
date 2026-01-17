@@ -31,11 +31,11 @@ Define datasets in `configs/odcs/datasets.yml`:
 
 ```yaml
 datasets:
-  - name: customers
-    source: postgres_warehouse
-    schema: public
-    table: customers
-    contract: contracts/contracts/customers.yml
+  - name: nba_games
+    source: postgres
+    schema: nba
+    table: games
+    contract: contracts/contracts/nba_games.yml
     owner: data-engineering@company.com
 ```
 

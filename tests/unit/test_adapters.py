@@ -27,11 +27,11 @@ def sample_odcs_config(tmp_path):
         },
         "datasets": [
             {
-                "name": "customers",
-                "source": "postgres_warehouse",
-                "schema": "public",
-                "table": "customers",
-                "contract": "contracts/contracts/customers.yml",
+                "name": "nba_games",
+                "source": "postgres",
+                "schema": "nba",
+                "table": "games",
+                "contract": "contracts/contracts/nba_games.yml",
             }
         ],
     }
@@ -48,12 +48,12 @@ def sample_contract(tmp_path):
     contracts_dir = tmp_path / "contracts" / "contracts"
     contracts_dir.mkdir(parents=True)
     
-    contract_file = contracts_dir / "customers.yml"
+    contract_file = contracts_dir / "nba_games.yml"
     contract_dict = {
         "version": "1.0",
-        "name": "customers",
+        "name": "nba_games",
         "schema": {
-            "name": "customers",
+            "name": "nba_games",
             "columns": [
                 {
                     "name": "customer_id",

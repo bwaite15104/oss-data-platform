@@ -1,0 +1,18 @@
+2026-01-17 17:49:02 +0000 - dagster - DEBUG - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - 705 - LOGS_CAPTURED - Started capturing logs in process (pid: 705).
+2026-01-17 17:49:02 +0000 - dagster - DEBUG - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - 705 - nba_games - STEP_START - Started execution of step "nba_games".
+2026-01-17 17:49:02 +0000 - dagster - INFO - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - nba_games - Starting NBA games extraction from CDN...
+INFO:ingestion.dlt.pipelines.nba_stats:Starting NBA games extraction from CDN...
+INFO:ingestion.dlt.pipelines.nba_stats:Fetching schedule from: https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json
+INFO:ingestion.dlt.pipelines.nba_stats:Schedule response status: 200
+INFO:ingestion.dlt.pipelines.nba_stats:Processing games for season: 2025-26
+INFO:ingestion.dlt.pipelines.nba_stats:Found 182 game dates
+INFO:ingestion.dlt.pipelines.nba_stats:Games extraction complete! Processed 1306 games
+2026-01-17 17:49:03 +0000 - dagster - INFO - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - nba_games - NBA games ingested: Pipeline nba_stats load step completed in 0.15 seconds
+1 load package(s) were loaded to destination postgres and into dataset nba
+The postgres destination used postgresql://postgres:***@postgres:5432/oss_data_platform location to store data
+Load package 1768672142.7851746 is LOADED and contains no failed jobs
+2026-01-17 17:49:03 +0000 - dagster - DEBUG - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - 705 - nba_games - STEP_OUTPUT - Yielded output "result" of type "dict". (Type check passed).
+2026-01-17 17:49:03 +0000 - dagster - DEBUG - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - nba_games - Writing file at: /opt/dagster/dagster_home/storage/nba_games using PickledObjectFilesystemIOManager...
+2026-01-17 17:49:03 +0000 - dagster - DEBUG - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - 705 - nba_games - ASSET_MATERIALIZATION - Materialized value nba_games.
+2026-01-17 17:49:03 +0000 - dagster - DEBUG - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - 705 - nba_games - HANDLED_OUTPUT - Handled output "result" using IO manager "io_manager"
+2026-01-17 17:49:03 +0000 - dagster - DEBUG - __ASSET_JOB - ca3799d1-a229-4033-85fb-61cc88675068 - 705 - nba_games - STEP_SUCCESS - Finished execution of step "nba_games" in 871ms.

@@ -1,0 +1,158 @@
+name: nba_team_game_stats
+description: Team statistics for individual games
+
+columns:
+  - name: game_id
+    type: string
+    nullable: false
+    description: Game identifier
+    
+  - name: team_id
+    type: integer
+    nullable: false
+    description: Team identifier
+    
+  - name: is_home
+    type: boolean
+    nullable: false
+    description: Whether team was home team
+    
+  - name: points
+    type: integer
+    nullable: false
+    description: Team points scored
+    
+  - name: field_goals_made
+    type: integer
+    nullable: false
+    default: 0
+    description: Team field goals made
+    
+  - name: field_goals_attempted
+    type: integer
+    nullable: false
+    default: 0
+    description: Team field goals attempted
+    
+  - name: field_goal_percentage
+    type: decimal
+    nullable: true
+    description: Team field goal percentage
+    
+  - name: three_pointers_made
+    type: integer
+    nullable: false
+    default: 0
+    description: Team three-pointers made
+    
+  - name: three_pointers_attempted
+    type: integer
+    nullable: false
+    default: 0
+    description: Team three-pointers attempted
+    
+  - name: three_point_percentage
+    type: decimal
+    nullable: true
+    description: Team three-point percentage
+    
+  - name: free_throws_made
+    type: integer
+    nullable: false
+    default: 0
+    description: Team free throws made
+    
+  - name: free_throws_attempted
+    type: integer
+    nullable: false
+    default: 0
+    description: Team free throws attempted
+    
+  - name: free_throw_percentage
+    type: decimal
+    nullable: true
+    description: Team free throw percentage
+    
+  - name: rebounds_offensive
+    type: integer
+    nullable: false
+    default: 0
+    description: Team offensive rebounds
+    
+  - name: rebounds_defensive
+    type: integer
+    nullable: false
+    default: 0
+    description: Team defensive rebounds
+    
+  - name: rebounds_total
+    type: integer
+    nullable: false
+    default: 0
+    description: Team total rebounds
+    
+  - name: assists
+    type: integer
+    nullable: false
+    default: 0
+    description: Team assists
+    
+  - name: steals
+    type: integer
+    nullable: false
+    default: 0
+    description: Team steals
+    
+  - name: blocks
+    type: integer
+    nullable: false
+    default: 0
+    description: Team blocks
+    
+  - name: turnovers
+    type: integer
+    nullable: false
+    default: 0
+    description: Team turnovers
+    
+  - name: personal_fouls
+    type: integer
+    nullable: false
+    default: 0
+    description: Team personal fouls
+    
+  - name: fast_break_points
+    type: integer
+    nullable: true
+    description: Fast break points
+    
+  - name: points_in_paint
+    type: integer
+    nullable: true
+    description: Points in paint
+    
+  - name: second_chance_points
+    type: integer
+    nullable: true
+    description: Second chance points
+    
+  - name: largest_lead
+    type: integer
+    nullable: true
+    description: Largest lead in game
+    
+  - name: created_at
+    type: timestamp
+    nullable: false
+    description: Record creation timestamp
+
+primary_key:
+  - game_id
+  - team_id
+
+indexes:
+  - columns: [game_id]
+  - columns: [team_id]
+
+
+

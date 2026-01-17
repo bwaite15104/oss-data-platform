@@ -1,15 +1,37 @@
 datasets:
-  - name: customers
+  # NBA Datasets
+  - name: nba_games
     source: postgres_warehouse
-    schema: public
-    table: customers
-    contract: contracts/contracts/customers.yml
+    schema: nba
+    table: games
+    contract: contracts/contracts/nba_games.yml
     owner: data-engineering@company.com
     
-  - name: orders
+  - name: nba_players
     source: postgres_warehouse
-    schema: public
-    table: orders
-    contract: contracts/contracts/orders.yml
+    schema: nba
+    table: players
+    contract: contracts/contracts/nba_players.yml
+    owner: data-engineering@company.com
+    
+  - name: nba_teams
+    source: postgres_warehouse
+    schema: nba
+    table: teams
+    contract: contracts/contracts/nba_teams.yml
+    owner: data-engineering@company.com
+    
+  - name: nba_player_game_stats
+    source: postgres_warehouse
+    schema: nba
+    table: player_game_stats
+    contract: contracts/contracts/nba_player_game_stats.yml
+    owner: data-engineering@company.com
+    
+  - name: nba_team_game_stats
+    source: postgres_warehouse
+    schema: nba
+    table: team_game_stats
+    contract: contracts/contracts/nba_team_game_stats.yml
     owner: data-engineering@company.com
 

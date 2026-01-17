@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "End-to-end open-source data engineering platform"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [
     {name = "OSS Data Platform Contributors"}
 ]
@@ -79,3 +79,5 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 
+[tool.setuptools]
+packages = ["adapters", "contracts", "ingestion", "orchestration", "tools", "transformation", "quality", "catalog", "monitoring", "storage"]

@@ -1,0 +1,162 @@
+name: nba_player_game_stats
+description: Player statistics for individual games
+
+columns:
+  - name: game_id
+    type: string
+    nullable: false
+    description: Game identifier
+    
+  - name: player_id
+    type: integer
+    nullable: false
+    description: Player identifier
+    
+  - name: team_id
+    type: integer
+    nullable: false
+    description: Team identifier
+    
+  - name: is_starter
+    type: boolean
+    nullable: false
+    default: false
+    description: Whether player was in starting lineup
+    
+  - name: minutes
+    type: string
+    nullable: true
+    description: Minutes played (e.g., "35:42")
+    
+  - name: minutes_played
+    type: integer
+    nullable: true
+    description: Minutes played as integer
+    
+  - name: points
+    type: integer
+    nullable: false
+    default: 0
+    description: Points scored
+    
+  - name: field_goals_made
+    type: integer
+    nullable: false
+    default: 0
+    description: Field goals made
+    
+  - name: field_goals_attempted
+    type: integer
+    nullable: false
+    default: 0
+    description: Field goals attempted
+    
+  - name: field_goal_percentage
+    type: decimal
+    nullable: true
+    description: Field goal percentage
+    
+  - name: three_pointers_made
+    type: integer
+    nullable: false
+    default: 0
+    description: Three-pointers made
+    
+  - name: three_pointers_attempted
+    type: integer
+    nullable: false
+    default: 0
+    description: Three-pointers attempted
+    
+  - name: three_point_percentage
+    type: decimal
+    nullable: true
+    description: Three-point percentage
+    
+  - name: free_throws_made
+    type: integer
+    nullable: false
+    default: 0
+    description: Free throws made
+    
+  - name: free_throws_attempted
+    type: integer
+    nullable: false
+    default: 0
+    description: Free throws attempted
+    
+  - name: free_throw_percentage
+    type: decimal
+    nullable: true
+    description: Free throw percentage
+    
+  - name: rebounds_offensive
+    type: integer
+    nullable: false
+    default: 0
+    description: Offensive rebounds
+    
+  - name: rebounds_defensive
+    type: integer
+    nullable: false
+    default: 0
+    description: Defensive rebounds
+    
+  - name: rebounds_total
+    type: integer
+    nullable: false
+    default: 0
+    description: Total rebounds
+    
+  - name: assists
+    type: integer
+    nullable: false
+    default: 0
+    description: Assists
+    
+  - name: steals
+    type: integer
+    nullable: false
+    default: 0
+    description: Steals
+    
+  - name: blocks
+    type: integer
+    nullable: false
+    default: 0
+    description: Blocks
+    
+  - name: turnovers
+    type: integer
+    nullable: false
+    default: 0
+    description: Turnovers
+    
+  - name: personal_fouls
+    type: integer
+    nullable: false
+    default: 0
+    description: Personal fouls
+    
+  - name: plus_minus
+    type: integer
+    nullable: true
+    description: Plus/minus rating
+    
+  - name: created_at
+    type: timestamp
+    nullable: false
+    description: Record creation timestamp
+
+primary_key:
+  - game_id
+  - player_id
+
+indexes:
+  - columns: [game_id]
+  - columns: [player_id]
+  - columns: [team_id]
+  - columns: [game_id, team_id]
+
+
+

@@ -20,9 +20,5 @@ make docker-up
 
 ## Sample Data
 
-Sample tables include:
-- `public.customers` - Customer data
-- `public.orders` - Order data
-
-These are used for development and testing.
+Tables are created by dlt pipelines and other ingestion tools. NBA data is stored in the `nba` schema.
 

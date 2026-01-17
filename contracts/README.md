@@ -21,11 +21,11 @@ Contracts are composed from modular components:
 
 ```bash
 # Compose a contract
-python contracts/composer.py --schema customers --quality rules --output customers
+python contracts/composer.py --schema nba_games --quality nba_rules --output nba_games
 
-# This creates contracts/contracts/customers.yml with:
-# - Schema from contracts/schemas/customers.yml
-# - Quality rules from contracts/quality/rules.yml
+# This creates contracts/contracts/nba_games.yml with:
+# - Schema from contracts/schemas/nba_games.yml
+# - Quality rules from contracts/quality/nba_rules.yml
 # - Metadata (owner, lineage, etc.)
 ```
 
@@ -35,9 +35,9 @@ Complete contracts follow ODCS standard:
 
 ```yaml
 version: "1.0"
-name: customers
+name: nba_games
 schema:
-  name: customers
+  name: nba_games
   columns: [...]
 quality:
   validation_rules: [...]

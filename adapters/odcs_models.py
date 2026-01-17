@@ -2,7 +2,7 @@
 Pydantic models for ODCS (Open Data Contract Standard) structure.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -11,7 +11,7 @@ class ODCSConnection(BaseModel):
     
     type: str = Field(..., description="Connection type (postgres, snowflake, bigquery, etc.)")
     host: Optional[str] = Field(None, description="Database host")
-    port: Optional[int] = Field(None, description="Database port")
+    port: Optional[Union[int, str]] = Field(None, description="Database port (can be env var like ${PORT})")
     database: Optional[str] = Field(None, description="Database name")
     schema: Optional[str] = Field(None, description="Schema name")
     username: Optional[str] = Field(None, description="Username")

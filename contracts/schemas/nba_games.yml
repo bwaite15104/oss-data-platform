@@ -1,0 +1,96 @@
+name: nba_games
+description: NBA game results and basic information
+
+columns:
+  - name: game_id
+    type: string
+    nullable: false
+    primary_key: true
+    description: Unique game identifier (e.g., "0022300123")
+    
+  - name: game_date
+    type: date
+    nullable: false
+    description: Date of the game
+    
+  - name: season
+    type: string
+    nullable: false
+    description: NBA season (e.g., "2023-24")
+    
+  - name: season_type
+    type: string
+    nullable: false
+    description: Type of season (Regular Season, Playoffs, Play-In)
+    
+  - name: home_team_id
+    type: integer
+    nullable: false
+    description: Home team ID
+    
+  - name: away_team_id
+    type: integer
+    nullable: false
+    description: Away team ID
+    
+  - name: home_team_name
+    type: string
+    nullable: false
+    description: Home team name
+    
+  - name: away_team_name
+    type: string
+    nullable: false
+    description: Away team name
+    
+  - name: home_score
+    type: integer
+    nullable: true
+    description: Home team final score
+    
+  - name: away_score
+    type: integer
+    nullable: true
+    description: Away team final score
+    
+  - name: winner_team_id
+    type: integer
+    nullable: true
+    description: Winning team ID
+    
+  - name: game_status
+    type: string
+    nullable: false
+    description: Game status (Final, Scheduled, In Progress)
+    
+  - name: venue
+    type: string
+    nullable: true
+    description: Venue/arena name
+    
+  - name: attendance
+    type: integer
+    nullable: true
+    description: Game attendance
+    
+  - name: created_at
+    type: timestamp
+    nullable: false
+    description: Record creation timestamp
+    
+  - name: updated_at
+    type: timestamp
+    nullable: true
+    description: Last update timestamp
+
+primary_key:
+  - game_id
+
+indexes:
+  - columns: [game_date]
+  - columns: [home_team_id]
+  - columns: [away_team_id]
+  - columns: [season, season_type]
+
+
+

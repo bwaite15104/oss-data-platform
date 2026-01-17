@@ -12,13 +12,3 @@ storage:
       port:
         env: POSTGRES_PORT
 
-compute_logs:
-  module: dagster.core.storage.noop_compute_log_manager
-  class: NoOpComputeLogManager
-
-local_artifact_storage:
-  module: dagster.core.storage.root
-  class: LocalFileSystemArtifactStorage
-  config:
-    base_dir: /opt/dagster/dagster_home/storage
-

@@ -1,16 +1,10 @@
 """Ingestion assets."""
 
-from dagster import asset
-
-@asset
-def raw_customers():
-    """Raw customers data from source."""
-    # TODO: Implement ingestion
-    pass
-
-@asset
-def raw_orders():
-    """Raw orders data from source."""
-    # TODO: Implement ingestion
-    pass
+# Import NBA ingestion assets (using reliable CDN endpoints)
+from .nba import (
+    nba_teams,
+    nba_players,
+    nba_games,
+    nba_todays_games,
+)
 
