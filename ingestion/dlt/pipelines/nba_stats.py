@@ -3,6 +3,8 @@ dlt pipeline for NBA Stats using official NBA CDN endpoints.
 
 This pipeline extracts data from the NBA CDN (cdn.nba.com) which is more reliable
 than the stats.nba.com API which has aggressive bot protection.
+
+Schema definitions are driven by ODCS contracts in contracts/schemas/*.yml
 """
 
 import dlt
@@ -11,21 +13,81 @@ from typing import Iterator, Dict, Any, Optional, Set
 from datetime import datetime
 import time
 import logging
+import sys
+from pathlib import Path
 
+# Add parent directories to path for contract loader
+_current_dir = Path(__file__).parent
+_project_root = _current_dir.parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+# Import contract loader for schema definitions
+try:
+    from ingestion.dlt.contract_loader import get_dlt_columns, get_primary_key
+    CONTRACTS_AVAILABLE = True
+except ImportError:
+    CONTRACTS_AVAILABLE = False
+
+# Import configuration from centralized config file
+try:
+    from ingestion.dlt.config import (
+        NBA_CDN_SCHEDULE,
+        NBA_CDN_SCOREBOARD,
+        NBA_CDN_PLAYERS,
+        NBA_CDN_ODDS,
+        NBA_CDN_BOXSCORE,
+        CDN_HEADERS,
+        REQUEST_TIMEOUT,
+        RATE_LIMIT_DELAY,
+        EAST_CONFERENCE_TEAMS,
+        TEAM_DIVISIONS,
+    )
+    CONFIG_AVAILABLE = True
+except ImportError:
+    # Fallback defaults if config not available
+    CONFIG_AVAILABLE = False
+    NBA_CDN_SCHEDULE = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"
+    NBA_CDN_SCOREBOARD = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json"
+    NBA_CDN_PLAYERS = "https://cdn.nba.com/static/json/staticData/playerIndex.json"
+    NBA_CDN_ODDS = "https://cdn.nba.com/static/json/liveData/odds/odds_todaysGames.json"
+    NBA_CDN_BOXSCORE = "https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id}.json"
+    CDN_HEADERS = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+    REQUEST_TIMEOUT = 60
+    RATE_LIMIT_DELAY = 0.2
+    EAST_CONFERENCE_TEAMS = set()
+    TEAM_DIVISIONS = {}
+    
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Reliable NBA CDN endpoints
-NBA_CDN_SCOREBOARD = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json"
-NBA_CDN_SCHEDULE = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"
-NBA_CDN_PLAYERS = "https://cdn.nba.com/static/json/staticData/playerIndex.json"
 
-# Common headers for NBA CDN requests
-CDN_HEADERS = {
-    "Accept": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-}
+def _get_contract_columns(contract_name: str) -> Optional[Dict]:
+    """Get columns from contract if available."""
+    if CONTRACTS_AVAILABLE:
+        try:
+            return get_dlt_columns(contract_name)
+        except Exception as e:
+            logger.warning(f"Could not load contract {contract_name}: {e}")
+    return None
+
+
+def _get_contract_pk(contract_name: str):
+    """Get primary key from contract if available."""
+    if CONTRACTS_AVAILABLE:
+        try:
+            pk = get_primary_key(contract_name)
+            if pk and len(pk) == 1:
+                return pk[0]
+            return pk
+        except Exception:
+            pass
+    return None
+
+# Note: NBA CDN endpoints and headers are imported from ingestion.dlt.config
+# See config.py for: NBA_CDN_SCHEDULE, NBA_CDN_SCOREBOARD, NBA_CDN_PLAYERS, 
+# NBA_CDN_ODDS, NBA_CDN_BOXSCORE, CDN_HEADERS, REQUEST_TIMEOUT, RATE_LIMIT_DELAY
 
 
 def _get_current_season() -> str:
@@ -42,63 +104,26 @@ def _get_current_season() -> str:
 
 
 def _get_conference(team_id: int) -> Optional[str]:
-    """Get team conference based on team ID."""
-    east_teams = {
-        1610612737,  # Hawks
-        1610612738,  # Celtics
-        1610612751,  # Nets
-        1610612766,  # Hornets
-        1610612741,  # Bulls
-        1610612739,  # Cavaliers
-        1610612765,  # Pistons
-        1610612754,  # Pacers
-        1610612748,  # Heat
-        1610612749,  # Bucks
-        1610612752,  # Knicks
-        1610612753,  # Magic
-        1610612755,  # 76ers
-        1610612761,  # Raptors
-        1610612764,  # Wizards
-    }
-    return "East" if team_id in east_teams else "West"
+    """Get team conference based on team ID. Uses EAST_CONFERENCE_TEAMS from config."""
+    return "East" if team_id in EAST_CONFERENCE_TEAMS else "West"
 
 
 def _get_division(team_id: int) -> Optional[str]:
-    """Get team division based on team ID."""
-    divisions = {
-        # Atlantic
-        1610612738: "Atlantic", 1610612751: "Atlantic", 1610612752: "Atlantic",
-        1610612755: "Atlantic", 1610612761: "Atlantic",
-        # Central
-        1610612741: "Central", 1610612739: "Central", 1610612765: "Central",
-        1610612754: "Central", 1610612749: "Central",
-        # Southeast
-        1610612737: "Southeast", 1610612766: "Southeast", 1610612748: "Southeast",
-        1610612753: "Southeast", 1610612764: "Southeast",
-        # Northwest
-        1610612743: "Northwest", 1610612750: "Northwest", 1610612760: "Northwest",
-        1610612757: "Northwest", 1610612762: "Northwest",
-        # Pacific
-        1610612744: "Pacific", 1610612746: "Pacific", 1610612747: "Pacific",
-        1610612756: "Pacific", 1610612758: "Pacific",
-        # Southwest
-        1610612742: "Southwest", 1610612745: "Southwest", 1610612763: "Southwest",
-        1610612740: "Southwest", 1610612759: "Southwest",
-    }
-    return divisions.get(team_id, "Unknown")
+    """Get team division based on team ID. Uses TEAM_DIVISIONS from config."""
+    return TEAM_DIVISIONS.get(team_id, "Unknown")
 
 
 @dlt.resource(
     name="teams",
     write_disposition="merge",
-    primary_key="team_id",
+    primary_key=_get_contract_pk("nba_teams") or "team_id",
+    columns=_get_contract_columns("nba_teams"),
 )
 def nba_teams_resource() -> Iterator[Dict[str, Any]]:
     """
     Extract NBA team data from the schedule endpoint.
     
-    This extracts unique teams from the full season schedule, which is more reliable
-    than the stats.nba.com API.
+    Schema defined in: contracts/schemas/nba_teams.yml
     """
     logger.info("Starting NBA teams extraction from CDN...")
     logger.info(f"Fetching schedule from: {NBA_CDN_SCHEDULE}")
@@ -169,7 +194,8 @@ def nba_teams_resource() -> Iterator[Dict[str, Any]]:
 @dlt.resource(
     name="games",
     write_disposition="merge",
-    primary_key="game_id",
+    primary_key=_get_contract_pk("nba_games") or "game_id",
+    columns=_get_contract_columns("nba_games"),
 )
 def nba_games_resource(
     season: Optional[str] = None,
@@ -250,13 +276,14 @@ def nba_games_resource(
 @dlt.resource(
     name="todays_games",
     write_disposition="merge",
-    primary_key="game_id",
+    primary_key=_get_contract_pk("nba_todays_games") or "game_id",
+    columns=_get_contract_columns("nba_todays_games"),
 )
 def nba_todays_games_resource() -> Iterator[Dict[str, Any]]:
     """
     Extract today's NBA games from the live scoreboard endpoint.
     
-    This provides more real-time data including live scores during games.
+    Schema defined in: contracts/schemas/nba_todays_games.yml
     """
     logger.info("Starting today's games extraction from CDN...")
     logger.info(f"Fetching scoreboard from: {NBA_CDN_SCOREBOARD}")
@@ -318,7 +345,8 @@ def nba_todays_games_resource() -> Iterator[Dict[str, Any]]:
 @dlt.resource(
     name="players",
     write_disposition="merge",
-    primary_key="player_id",
+    primary_key=_get_contract_pk("nba_players") or "player_id",
+    columns=_get_contract_columns("nba_players"),
 )
 def nba_players_resource(
     season: Optional[str] = None,
@@ -398,6 +426,375 @@ def nba_players_resource(
         
     except Exception as e:
         logger.error(f"Error fetching players: {e}")
+        raise
+
+
+@dlt.resource(
+    name="betting_odds",
+    write_disposition="merge",
+    primary_key=_get_contract_pk("nba_betting_odds") or ["game_id", "book_name", "market_type"],
+    columns=_get_contract_columns("nba_betting_odds"),
+)
+def nba_betting_odds_resource() -> Iterator[Dict[str, Any]]:
+    """
+    Extract betting odds for today's NBA games.
+    
+    Schema defined in: contracts/schemas/nba_betting_odds.yml
+    Critical for ML betting models!
+    """
+    logger.info("Starting betting odds extraction from CDN...")
+    logger.info(f"Fetching odds from: {NBA_CDN_ODDS}")
+    
+    try:
+        response = requests.get(NBA_CDN_ODDS, headers=CDN_HEADERS, timeout=60)
+        response.raise_for_status()
+        logger.info(f"Odds response status: {response.status_code}")
+        
+        data = response.json()
+        games = data.get("games", [])
+        
+        logger.info(f"Found odds for {len(games)} games")
+        
+        odds_count = 0
+        for game in games:
+            game_id = game.get("gameId")
+            markets = game.get("markets", [])
+            
+            for market in markets:
+                market_type = market.get("name", "unknown")
+                books = market.get("books", [])
+                
+                for book in books:
+                    book_name = book.get("name", "unknown")
+                    outcomes = book.get("outcomes", [])
+                    
+                    # Parse outcomes into home/away odds
+                    home_odds = None
+                    away_odds = None
+                    home_line = None
+                    away_line = None
+                    over_odds = None
+                    under_odds = None
+                    total_line = None
+                    
+                    for outcome in outcomes:
+                        outcome_type = outcome.get("type", "")
+                        odds = outcome.get("odds")
+                        line = outcome.get("line")
+                        
+                        if outcome_type == "home":
+                            home_odds = odds
+                            home_line = line
+                        elif outcome_type == "away":
+                            away_odds = odds
+                            away_line = line
+                        elif outcome_type == "over":
+                            over_odds = odds
+                            total_line = line
+                        elif outcome_type == "under":
+                            under_odds = odds
+                    
+                    odds_data = {
+                        "game_id": game_id,
+                        "book_name": book_name,
+                        "market_type": market_type,
+                        "home_odds": home_odds,
+                        "away_odds": away_odds,
+                        "home_line": home_line,
+                        "away_line": away_line,
+                        "over_odds": over_odds,
+                        "under_odds": under_odds,
+                        "total_line": total_line,
+                        "captured_at": datetime.now().isoformat(),
+                    }
+                    
+                    odds_count += 1
+                    yield odds_data
+        
+        logger.info(f"Betting odds extraction complete! Yielded {odds_count} odds records")
+        
+    except Exception as e:
+        logger.error(f"Error fetching betting odds: {e}")
+        raise
+
+
+@dlt.resource(
+    name="boxscores",
+    write_disposition="merge",
+    primary_key=_get_contract_pk("nba_boxscores") or ["game_id", "player_id"],
+    columns=_get_contract_columns("nba_boxscores"),
+)
+def nba_boxscores_resource(
+    game_ids: Optional[list] = None,
+    fetch_from_schedule: bool = True,
+    completed_only: bool = True,
+    limit: Optional[int] = None,
+) -> Iterator[Dict[str, Any]]:
+    """
+    Extract detailed boxscore data (player stats per game).
+    
+    This provides comprehensive player statistics for each game including:
+    - Points, assists, rebounds
+    - Field goal %, 3P%, FT%
+    - Plus/minus, minutes played
+    - And many more...
+    
+    Critical for ML player performance models!
+    
+    Args:
+        game_ids: List of specific game IDs to fetch. If None, fetches from schedule.
+        fetch_from_schedule: If True and game_ids is None, gets game IDs from schedule.
+        completed_only: Only fetch boxscores for completed games (status=3).
+        limit: Maximum number of games to process (for testing).
+    """
+    logger.info("Starting boxscores extraction from CDN...")
+    
+    try:
+        # Get game IDs to process
+        if game_ids:
+            games_to_process = game_ids
+        elif fetch_from_schedule:
+            # Fetch game IDs from schedule
+            logger.info("Fetching game IDs from schedule...")
+            response = requests.get(NBA_CDN_SCHEDULE, headers=CDN_HEADERS, timeout=60)
+            response.raise_for_status()
+            schedule_data = response.json()
+            
+            games_to_process = []
+            for game_date in schedule_data.get("leagueSchedule", {}).get("gameDates", []):
+                for game in game_date.get("games", []):
+                    game_status = game.get("gameStatus", 1)
+                    if completed_only and game_status != 3:
+                        continue
+                    games_to_process.append(game.get("gameId"))
+                    
+                    if limit and len(games_to_process) >= limit:
+                        break
+                if limit and len(games_to_process) >= limit:
+                    break
+            
+            logger.info(f"Found {len(games_to_process)} completed games to process")
+        else:
+            logger.warning("No game IDs provided and fetch_from_schedule is False")
+            return
+        
+        # Apply limit
+        if limit:
+            games_to_process = games_to_process[:limit]
+        
+        player_stats_count = 0
+        for game_id in games_to_process:
+            boxscore_url = NBA_CDN_BOXSCORE.format(game_id=game_id)
+            
+            try:
+                response = requests.get(boxscore_url, headers=CDN_HEADERS, timeout=30)
+                response.raise_for_status()
+                boxscore_data = response.json()
+                
+                game = boxscore_data.get("game", {})
+                game_date = game.get("gameTimeUTC", "").split("T")[0]
+                
+                # Process both home and away teams
+                for team_type in ["homeTeam", "awayTeam"]:
+                    team = game.get(team_type, {})
+                    team_id = team.get("teamId")
+                    is_home = team_type == "homeTeam"
+                    
+                    for player in team.get("players", []):
+                        stats = player.get("statistics", {})
+                        
+                        player_stats = {
+                            "game_id": game_id,
+                            "game_date": game_date,
+                            "player_id": player.get("personId"),
+                            "player_name": player.get("name"),
+                            "team_id": team_id,
+                            "is_home": is_home,
+                            "is_starter": player.get("starter") == "1",
+                            "minutes": stats.get("minutes", "0:00"),
+                            "minutes_calculated": stats.get("minutesCalculated", "0:00"),
+                            "points": stats.get("points", 0),
+                            "assists": stats.get("assists", 0),
+                            "rebounds_total": stats.get("reboundsTotal", 0),
+                            "rebounds_offensive": stats.get("reboundsOffensive", 0),
+                            "rebounds_defensive": stats.get("reboundsDefensive", 0),
+                            "steals": stats.get("steals", 0),
+                            "blocks": stats.get("blocks", 0),
+                            "turnovers": stats.get("turnovers", 0),
+                            "fouls_personal": stats.get("foulsPersonal", 0),
+                            "fouls_technical": stats.get("foulsTechnical", 0),
+                            "field_goals_made": stats.get("fieldGoalsMade", 0),
+                            "field_goals_attempted": stats.get("fieldGoalsAttempted", 0),
+                            "field_goal_pct": stats.get("fieldGoalsPercentage", 0),
+                            "three_pointers_made": stats.get("threePointersMade", 0),
+                            "three_pointers_attempted": stats.get("threePointersAttempted", 0),
+                            "three_point_pct": stats.get("threePointersPercentage", 0),
+                            "free_throws_made": stats.get("freeThrowsMade", 0),
+                            "free_throws_attempted": stats.get("freeThrowsAttempted", 0),
+                            "free_throw_pct": stats.get("freeThrowsPercentage", 0),
+                            "plus_minus": stats.get("plusMinusPoints", 0),
+                            "points_fast_break": stats.get("pointsFastBreak", 0),
+                            "points_in_paint": stats.get("pointsInThePaint", 0),
+                            "points_second_chance": stats.get("pointsSecondChance", 0),
+                            "created_at": datetime.now().isoformat(),
+                        }
+                        
+                        player_stats_count += 1
+                        yield player_stats
+                
+                # Rate limiting between games
+                time.sleep(0.2)
+                
+            except Exception as e:
+                logger.warning(f"Error fetching boxscore for game {game_id}: {e}")
+                continue
+        
+        logger.info(f"Boxscores extraction complete! Yielded {player_stats_count} player stats records")
+        
+    except Exception as e:
+        logger.error(f"Error in boxscores extraction: {e}")
+        raise
+
+
+@dlt.resource(
+    name="team_boxscores",
+    write_disposition="merge",
+    primary_key=_get_contract_pk("nba_team_boxscores") or ["game_id", "team_id"],
+    columns=_get_contract_columns("nba_team_boxscores"),
+)
+def nba_team_boxscores_resource(
+    game_ids: Optional[list] = None,
+    fetch_from_schedule: bool = True,
+    completed_only: bool = True,
+    limit: Optional[int] = None,
+) -> Iterator[Dict[str, Any]]:
+    """
+    Extract team-level boxscore data (team stats per game).
+    
+    Aggregates team performance metrics for each game.
+    Useful for team-based ML models.
+    
+    Args:
+        game_ids: List of specific game IDs to fetch.
+        fetch_from_schedule: If True, gets game IDs from schedule.
+        completed_only: Only fetch boxscores for completed games.
+        limit: Maximum number of games to process.
+    """
+    logger.info("Starting team boxscores extraction from CDN...")
+    
+    try:
+        # Get game IDs to process (same logic as player boxscores)
+        if game_ids:
+            games_to_process = game_ids
+        elif fetch_from_schedule:
+            logger.info("Fetching game IDs from schedule...")
+            response = requests.get(NBA_CDN_SCHEDULE, headers=CDN_HEADERS, timeout=60)
+            response.raise_for_status()
+            schedule_data = response.json()
+            
+            games_to_process = []
+            for game_date in schedule_data.get("leagueSchedule", {}).get("gameDates", []):
+                for game in game_date.get("games", []):
+                    game_status = game.get("gameStatus", 1)
+                    if completed_only and game_status != 3:
+                        continue
+                    games_to_process.append(game.get("gameId"))
+                    
+                    if limit and len(games_to_process) >= limit:
+                        break
+                if limit and len(games_to_process) >= limit:
+                    break
+            
+            logger.info(f"Found {len(games_to_process)} completed games to process")
+        else:
+            return
+        
+        if limit:
+            games_to_process = games_to_process[:limit]
+        
+        team_stats_count = 0
+        for game_id in games_to_process:
+            boxscore_url = NBA_CDN_BOXSCORE.format(game_id=game_id)
+            
+            try:
+                response = requests.get(boxscore_url, headers=CDN_HEADERS, timeout=30)
+                response.raise_for_status()
+                boxscore_data = response.json()
+                
+                game = boxscore_data.get("game", {})
+                game_date = game.get("gameTimeUTC", "").split("T")[0]
+                
+                for team_type in ["homeTeam", "awayTeam"]:
+                    team = game.get(team_type, {})
+                    is_home = team_type == "homeTeam"
+                    
+                    # Aggregate player stats for team totals
+                    team_totals = {
+                        "points": 0, "assists": 0, "rebounds_total": 0,
+                        "steals": 0, "blocks": 0, "turnovers": 0,
+                        "field_goals_made": 0, "field_goals_attempted": 0,
+                        "three_pointers_made": 0, "three_pointers_attempted": 0,
+                        "free_throws_made": 0, "free_throws_attempted": 0,
+                    }
+                    
+                    for player in team.get("players", []):
+                        stats = player.get("statistics", {})
+                        team_totals["points"] += stats.get("points", 0) or 0
+                        team_totals["assists"] += stats.get("assists", 0) or 0
+                        team_totals["rebounds_total"] += stats.get("reboundsTotal", 0) or 0
+                        team_totals["steals"] += stats.get("steals", 0) or 0
+                        team_totals["blocks"] += stats.get("blocks", 0) or 0
+                        team_totals["turnovers"] += stats.get("turnovers", 0) or 0
+                        team_totals["field_goals_made"] += stats.get("fieldGoalsMade", 0) or 0
+                        team_totals["field_goals_attempted"] += stats.get("fieldGoalsAttempted", 0) or 0
+                        team_totals["three_pointers_made"] += stats.get("threePointersMade", 0) or 0
+                        team_totals["three_pointers_attempted"] += stats.get("threePointersAttempted", 0) or 0
+                        team_totals["free_throws_made"] += stats.get("freeThrowsMade", 0) or 0
+                        team_totals["free_throws_attempted"] += stats.get("freeThrowsAttempted", 0) or 0
+                    
+                    # Calculate percentages
+                    fg_pct = (team_totals["field_goals_made"] / team_totals["field_goals_attempted"] * 100) if team_totals["field_goals_attempted"] > 0 else 0
+                    three_pct = (team_totals["three_pointers_made"] / team_totals["three_pointers_attempted"] * 100) if team_totals["three_pointers_attempted"] > 0 else 0
+                    ft_pct = (team_totals["free_throws_made"] / team_totals["free_throws_attempted"] * 100) if team_totals["free_throws_attempted"] > 0 else 0
+                    
+                    team_stats = {
+                        "game_id": game_id,
+                        "game_date": game_date,
+                        "team_id": team.get("teamId"),
+                        "team_name": team.get("teamName"),
+                        "team_city": team.get("teamCity"),
+                        "is_home": is_home,
+                        "points": team_totals["points"],
+                        "assists": team_totals["assists"],
+                        "rebounds_total": team_totals["rebounds_total"],
+                        "steals": team_totals["steals"],
+                        "blocks": team_totals["blocks"],
+                        "turnovers": team_totals["turnovers"],
+                        "field_goals_made": team_totals["field_goals_made"],
+                        "field_goals_attempted": team_totals["field_goals_attempted"],
+                        "field_goal_pct": round(fg_pct, 1),
+                        "three_pointers_made": team_totals["three_pointers_made"],
+                        "three_pointers_attempted": team_totals["three_pointers_attempted"],
+                        "three_point_pct": round(three_pct, 1),
+                        "free_throws_made": team_totals["free_throws_made"],
+                        "free_throws_attempted": team_totals["free_throws_attempted"],
+                        "free_throw_pct": round(ft_pct, 1),
+                        "created_at": datetime.now().isoformat(),
+                    }
+                    
+                    team_stats_count += 1
+                    yield team_stats
+                
+                time.sleep(0.2)
+                
+            except Exception as e:
+                logger.warning(f"Error fetching boxscore for game {game_id}: {e}")
+                continue
+        
+        logger.info(f"Team boxscores extraction complete! Yielded {team_stats_count} team stats records")
+        
+    except Exception as e:
+        logger.error(f"Error in team boxscores extraction: {e}")
         raise
 
 

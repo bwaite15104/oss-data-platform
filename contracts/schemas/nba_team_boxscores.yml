@@ -1,0 +1,122 @@
+name: nba_team_boxscores
+description: NBA team boxscore statistics aggregated per game
+
+columns:
+  - name: game_id
+    type: string
+    nullable: false
+    description: Game identifier
+    
+  - name: team_id
+    type: integer
+    nullable: false
+    description: Team identifier
+    
+  - name: game_date
+    type: string
+    nullable: true
+    description: Game date (YYYY-MM-DD)
+    
+  - name: team_name
+    type: string
+    nullable: true
+    description: Team name
+    
+  - name: team_city
+    type: string
+    nullable: true
+    description: Team city
+    
+  - name: is_home
+    type: boolean
+    nullable: true
+    description: Whether team is home team
+    
+  - name: points
+    type: integer
+    nullable: true
+    description: Total points scored
+    
+  - name: assists
+    type: integer
+    nullable: true
+    description: Total assists
+    
+  - name: rebounds_total
+    type: integer
+    nullable: true
+    description: Total rebounds
+    
+  - name: steals
+    type: integer
+    nullable: true
+    description: Total steals
+    
+  - name: blocks
+    type: integer
+    nullable: true
+    description: Total blocks
+    
+  - name: turnovers
+    type: integer
+    nullable: true
+    description: Total turnovers
+    
+  - name: field_goals_made
+    type: integer
+    nullable: true
+    description: Field goals made
+    
+  - name: field_goals_attempted
+    type: integer
+    nullable: true
+    description: Field goals attempted
+    
+  - name: field_goal_pct
+    type: float
+    nullable: true
+    description: Team field goal percentage
+    
+  - name: three_pointers_made
+    type: integer
+    nullable: true
+    description: Three pointers made
+    
+  - name: three_pointers_attempted
+    type: integer
+    nullable: true
+    description: Three pointers attempted
+    
+  - name: three_point_pct
+    type: float
+    nullable: true
+    description: Team three point percentage
+    
+  - name: free_throws_made
+    type: integer
+    nullable: true
+    description: Free throws made
+    
+  - name: free_throws_attempted
+    type: integer
+    nullable: true
+    description: Free throws attempted
+    
+  - name: free_throw_pct
+    type: float
+    nullable: true
+    description: Team free throw percentage
+    
+  - name: created_at
+    type: timestamp
+    nullable: false
+    description: Record creation timestamp
+
+primary_key:
+  - game_id
+  - team_id
+
+indexes:
+  - columns: [game_id]
+  - columns: [team_id]
+  - columns: [game_date]

@@ -1,5 +1,5 @@
 name: nba_players
-description: NBA player information and career statistics
+description: NBA player information from CDN player index endpoint
 
 columns:
   - name: player_id
@@ -7,11 +7,6 @@ columns:
     nullable: false
     primary_key: true
     description: Unique player identifier
-    
-  - name: player_name
-    type: string
-    nullable: false
-    description: Player full name
     
   - name: first_name
     type: string
@@ -23,10 +18,45 @@ columns:
     nullable: true
     description: Player last name
     
+  - name: player_name
+    type: string
+    nullable: false
+    description: Player full name
+    
+  - name: player_slug
+    type: string
+    nullable: true
+    description: URL-friendly player identifier
+    
+  - name: team_id
+    type: integer
+    nullable: true
+    description: Current team ID
+    
+  - name: team_name
+    type: string
+    nullable: true
+    description: Current team name
+    
+  - name: team_city
+    type: string
+    nullable: true
+    description: Current team city
+    
+  - name: team_abbreviation
+    type: string
+    nullable: true
+    description: Current team abbreviation
+    
+  - name: jersey_number
+    type: string
+    nullable: true
+    description: Player jersey number
+    
   - name: position
     type: string
     nullable: true
-    description: Player position (PG, SG, SF, PF, C)
+    description: Player position (G, F, C, G-F, etc.)
     
   - name: height
     type: string
@@ -38,51 +68,60 @@ columns:
     nullable: true
     description: Player weight in pounds
     
-  - name: age
-    type: integer
+  - name: college
+    type: string
     nullable: true
-    description: Player age
-    
-  - name: birth_date
-    type: date
-    nullable: true
-    description: Player birth date
+    description: College attended
     
   - name: country
     type: string
     nullable: true
-    description: Player country of origin
+    description: Country of origin
     
-  - name: team_id
+  - name: draft_year
     type: integer
     nullable: true
-    description: Current team ID
+    description: Year drafted
     
-  - name: jersey_number
+  - name: draft_round
     type: integer
     nullable: true
-    description: Player jersey number
+    description: Draft round
     
-  - name: years_pro
+  - name: draft_number
     type: integer
     nullable: true
-    description: Years as professional
+    description: Draft pick number
     
-  - name: is_active
-    type: boolean
-    nullable: false
-    default: true
-    description: Whether player is currently active
+  - name: from_year
+    type: integer
+    nullable: true
+    description: First year in NBA
+    
+  - name: to_year
+    type: integer
+    nullable: true
+    description: Last year in NBA (for retired players)
+    
+  - name: career_pts
+    type: float
+    nullable: true
+    description: Career points per game average
+    
+  - name: career_reb
+    type: float
+    nullable: true
+    description: Career rebounds per game average
+    
+  - name: career_ast
+    type: float
+    nullable: true
+    description: Career assists per game average
     
   - name: created_at
     type: timestamp
     nullable: false
     description: Record creation timestamp
-    
-  - name: updated_at
-    type: timestamp
-    nullable: true
-    description: Last update timestamp
 
 primary_key:
   - player_id
@@ -91,6 +130,3 @@ indexes:
   - columns: [player_name]
   - columns: [team_id]
   - columns: [position]
-
-
-

@@ -1,0 +1,178 @@
+name: nba_boxscores
+description: NBA player boxscore statistics from CDN boxscore endpoint - critical for ML models
+
+columns:
+  - name: game_id
+    type: string
+    nullable: false
+    description: Game identifier
+    
+  - name: player_id
+    type: integer
+    nullable: false
+    description: Player identifier
+    
+  - name: game_date
+    type: string
+    nullable: true
+    description: Game date (YYYY-MM-DD)
+    
+  - name: player_name
+    type: string
+    nullable: true
+    description: Player name
+    
+  - name: team_id
+    type: integer
+    nullable: true
+    description: Team identifier
+    
+  - name: is_home
+    type: boolean
+    nullable: true
+    description: Whether player's team is home team
+    
+  - name: is_starter
+    type: boolean
+    nullable: true
+    description: Whether player started the game
+    
+  - name: minutes
+    type: string
+    nullable: true
+    description: Minutes played (MM:SS format)
+    
+  - name: minutes_calculated
+    type: string
+    nullable: true
+    description: Calculated minutes string
+    
+  - name: points
+    type: integer
+    nullable: true
+    description: Points scored
+    
+  - name: assists
+    type: integer
+    nullable: true
+    description: Assists
+    
+  - name: rebounds_total
+    type: integer
+    nullable: true
+    description: Total rebounds
+    
+  - name: rebounds_offensive
+    type: integer
+    nullable: true
+    description: Offensive rebounds
+    
+  - name: rebounds_defensive
+    type: integer
+    nullable: true
+    description: Defensive rebounds
+    
+  - name: steals
+    type: integer
+    nullable: true
+    description: Steals
+    
+  - name: blocks
+    type: integer
+    nullable: true
+    description: Blocks
+    
+  - name: turnovers
+    type: integer
+    nullable: true
+    description: Turnovers
+    
+  - name: fouls_personal
+    type: integer
+    nullable: true
+    description: Personal fouls
+    
+  - name: fouls_technical
+    type: integer
+    nullable: true
+    description: Technical fouls
+    
+  - name: field_goals_made
+    type: integer
+    nullable: true
+    description: Field goals made
+    
+  - name: field_goals_attempted
+    type: integer
+    nullable: true
+    description: Field goals attempted
+    
+  - name: field_goal_pct
+    type: float
+    nullable: true
+    description: Field goal percentage
+    
+  - name: three_pointers_made
+    type: integer
+    nullable: true
+    description: Three pointers made
+    
+  - name: three_pointers_attempted
+    type: integer
+    nullable: true
+    description: Three pointers attempted
+    
+  - name: three_point_pct
+    type: float
+    nullable: true
+    description: Three point percentage
+    
+  - name: free_throws_made
+    type: integer
+    nullable: true
+    description: Free throws made
+    
+  - name: free_throws_attempted
+    type: integer
+    nullable: true
+    description: Free throws attempted
+    
+  - name: free_throw_pct
+    type: float
+    nullable: true
+    description: Free throw percentage
+    
+  - name: plus_minus
+    type: integer
+    nullable: true
+    description: Plus/minus statistic
+    
+  - name: points_fast_break
+    type: integer
+    nullable: true
+    description: Fast break points
+    
+  - name: points_in_paint
+    type: integer
+    nullable: true
+    description: Points in the paint
+    
+  - name: points_second_chance
+    type: integer
+    nullable: true
+    description: Second chance points
+    
+  - name: created_at
+    type: timestamp
+    nullable: false
+    description: Record creation timestamp
+
+primary_key:
+  - game_id
+  - player_id
+
+indexes:
+  - columns: [game_id]
+  - columns: [player_id]
+  - columns: [team_id]
+  - columns: [game_date]

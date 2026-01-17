@@ -1,5 +1,5 @@
 name: nba_teams
-description: NBA team information
+description: NBA team information from CDN schedule endpoint
 
 columns:
   - name: team_id
@@ -11,7 +11,7 @@ columns:
   - name: team_name
     type: string
     nullable: false
-    description: Team full name
+    description: Team name (e.g., "Lakers", "Celtics")
     
   - name: team_abbreviation
     type: string
@@ -24,11 +24,6 @@ columns:
     nullable: false
     description: Team city
     
-  - name: nickname
-    type: string
-    nullable: true
-    description: Team nickname
-    
   - name: conference
     type: string
     nullable: false
@@ -37,22 +32,7 @@ columns:
   - name: division
     type: string
     nullable: false
-    description: Division name
-    
-  - name: arena
-    type: string
-    nullable: true
-    description: Home arena name
-    
-  - name: arena_capacity
-    type: integer
-    nullable: true
-    description: Arena capacity
-    
-  - name: founded
-    type: integer
-    nullable: true
-    description: Year team was founded
+    description: Division name (Atlantic, Central, Southeast, Northwest, Pacific, Southwest)
     
   - name: is_active
     type: boolean
@@ -64,11 +44,6 @@ columns:
     type: timestamp
     nullable: false
     description: Record creation timestamp
-    
-  - name: updated_at
-    type: timestamp
-    nullable: true
-    description: Last update timestamp
 
 primary_key:
   - team_id
@@ -78,6 +53,3 @@ indexes:
     unique: true
   - columns: [conference]
   - columns: [division]
-
-
-

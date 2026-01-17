@@ -1,0 +1,68 @@
+name: nba_betting_odds
+description: NBA betting odds from CDN odds endpoint - critical for ML betting models
+
+columns:
+  - name: game_id
+    type: string
+    nullable: false
+    description: Game identifier
+    
+  - name: book_name
+    type: string
+    nullable: false
+    description: Sportsbook name
+    
+  - name: market_type
+    type: string
+    nullable: false
+    description: Market type (2way, spread, total)
+    
+  - name: home_odds
+    type: float
+    nullable: true
+    description: Home team moneyline odds (decimal)
+    
+  - name: away_odds
+    type: float
+    nullable: true
+    description: Away team moneyline odds (decimal)
+    
+  - name: home_line
+    type: float
+    nullable: true
+    description: Home team spread line
+    
+  - name: away_line
+    type: float
+    nullable: true
+    description: Away team spread line
+    
+  - name: over_odds
+    type: float
+    nullable: true
+    description: Over odds (decimal)
+    
+  - name: under_odds
+    type: float
+    nullable: true
+    description: Under odds (decimal)
+    
+  - name: total_line
+    type: float
+    nullable: true
+    description: Total points line (over/under)
+    
+  - name: captured_at
+    type: timestamp
+    nullable: false
+    description: When odds were captured
+
+primary_key:
+  - game_id
+  - book_name
+  - market_type
+
+indexes:
+  - columns: [game_id]
+  - columns: [market_type]
+  - columns: [captured_at]

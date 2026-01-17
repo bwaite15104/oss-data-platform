@@ -2,6 +2,7 @@
 pydantic>=2.0.0
 pyyaml>=6.0.0
 click>=8.0.0
+requests>=2.28.0
 
 # Data quality
 baselinr>=0.1.0
@@ -15,12 +16,13 @@ dagster-postgres>=0.21.0
 sqlmesh>=0.0.1
 
 # Ingestion
-dlt>=0.3.0
+dlt[postgres]>=0.3.0
+psycopg2-binary>=2.9.0
 
 # Catalog
 datahub>=0.12.0
 
-# Development dependencies (optional)
+# Development dependencies (install with: pip install -e ".[dev]")
 # pytest>=7.0.0
 # pytest-cov>=4.0.0
 # black>=23.0.0

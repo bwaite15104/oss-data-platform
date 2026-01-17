@@ -62,46 +62,76 @@ flowchart TB
 
 ## Quick Start
 
-1. **Clone and setup**
-   ```bash
-   git clone <repo-url>
-   cd oss-data-platform
-   make setup
-   ```
+### 1. Clone and Install Dependencies
+```bash
+git clone <repo-url>
+cd oss-data-platform
+make setup
+```
 
-2. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your connection details
-   ```
+This installs all required dependencies including:
+- Dagster (orchestration + CLI)
+- dlt (data ingestion)
+- PostgreSQL drivers
+- Baselinr (data quality)
 
-3. **Compose contracts**
-   ```bash
-   make compose-contracts
-   ```
+### 2. Start Infrastructure
+```bash
+make docker-up
+```
 
-4. **Generate tool configs**
-   ```bash
-   make generate-configs
-   ```
+This starts:
+- **PostgreSQL** (localhost:5432) - Data warehouse
+- **Dagster UI** (localhost:3000) - Orchestration via Docker
+- **Metabase** (localhost:3001) - Dashboards
 
-5. **Start infrastructure**
-   ```bash
-   make docker-up
-   ```
+### 3. Run Assets (Choose One)
 
-6. **Ingest NBA data**
-   ```bash
-   # Use Dagster to run NBA ingestion assets
-   # Or run the dlt pipeline directly:
-   python ingestion/dlt/pipelines/nba_stats.py
-   ```
+**Option A: Local Dagster CLI (Recommended for Development)**
+```bash
+# List available assets
+make dagster-list
 
-7. **Start Dagster**
-   ```bash
-   cd orchestration/dagster
-   dagster dev
-   ```
+# Start local dev server
+make dagster-dev
+# Open http://localhost:3000
+```
+
+**Option B: Docker Dagster**
+```bash
+# Already running from docker-up
+# Open http://localhost:3000
+```
+
+### 4. Materialize Data
+In Dagster UI (http://localhost:3000):
+1. Go to Assets
+2. Select `nba_teams`, `nba_games`, etc.
+3. Click "Materialize"
+
+Or via CLI:
+```bash
+dagster asset materialize -f definitions.py --select nba_teams
+```
+
+### 5. Query Data
+```bash
+# Connect to PostgreSQL
+docker exec -it oss_data_platform_postgres psql -U postgres -d oss_data_platform
+
+# Query NBA data
+SELECT * FROM nba.teams LIMIT 5;
+```
+
+## Service URLs
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| Dagster UI | http://localhost:3000 | Orchestration |
+| Metabase | http://localhost:3001 | Dashboards |
+| PostgreSQL | localhost:5432 | Database (postgres/postgres) |
+| Grafana | http://localhost:3002 | Metrics |
+| Prometheus | http://localhost:9090 | Monitoring |
 
 ## Contract Composition Workflow
 

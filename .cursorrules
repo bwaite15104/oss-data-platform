@@ -1,0 +1,34 @@
+# OSS Data Platform - Cursor Rules
+
+## Project Overview
+NBA sports betting data platform. Goal: Build ML models to predict game outcomes for betting.
+
+## Quick Reference
+- **Dagster UI**: http://localhost:3000
+- **Metabase**: http://localhost:3001
+- **PostgreSQL**: localhost:5432 (postgres/postgres/oss_data_platform)
+
+## Key Commands
+```bash
+make docker-up         # Start all services
+make docker-down       # Stop services
+make generate-configs  # Generate tool configs from ODCS
+```
+
+## Documentation
+For detailed context, reference these docs in `.cursor/docs/`:
+
+| Doc | When to Reference |
+|-----|-------------------|
+| `architecture.md` | Understanding system design, data flow |
+| `contracts.md` | ODCS contracts, schema definitions, contract loader |
+| `ingestion.md` | Adding new data sources, dlt pipelines |
+| `ml-features.md` | ML model features, betting predictions |
+| `commands.md` | Full list of make commands, docker ops |
+| `database.md` | Schema info, table structures, queries |
+
+## Code Locations
+- `ingestion/dlt/pipelines/` - dlt data pipelines
+- `orchestration/dagster/assets/` - Dagster asset definitions
+- `transformation/sqlmesh/` - SQL transformations
+- `contracts/` - ODCS data contracts

@@ -6,5 +6,8 @@ from .nba import (
     nba_players,
     nba_games,
     nba_todays_games,
+    nba_betting_odds,
+    nba_boxscores,
+    nba_team_boxscores,
 )
 
