@@ -5,14 +5,27 @@ NBA sports betting data platform. Goal: Build ML models to predict game outcomes
 
 ## Quick Reference
 - **Dagster UI**: http://localhost:3000
-- **Metabase**: http://localhost:3001
-- **PostgreSQL**: localhost:5432 (postgres/postgres/oss_data_platform)
+- **Metabase**: http://localhost:3002
+- **PostgreSQL**: localhost:5432 (postgres/postgres/nba_analytics)
+- **Database**: `nba_analytics` with layered schemas (raw_dev → staging_dev → marts_dev → features_dev → ml_dev)
 
 ## Key Commands
 ```bash
 make docker-up         # Start all services
 make docker-down       # Stop services
+make dagster-dev       # Start local Dagster (uses Docker Postgres)
+make db-counts         # Show row counts in raw_dev
+make db-schemas        # List all database schemas
 make generate-configs  # Generate tool configs from ODCS
+```
+
+## Database Query Utility
+```bash
+# Quick validation queries (use this to check data)
+python scripts/db_query.py --counts raw_dev
+python scripts/db_query.py --schemas
+python scripts/db_query.py "SELECT * FROM raw_dev.teams LIMIT 5"
+python scripts/db_query.py "SELECT count(*) FROM raw_dev.games"
 ```
 
 ## Documentation
@@ -23,12 +36,101 @@ For detailed context, reference these docs in `.cursor/docs/`:
 | `architecture.md` | Understanding system design, data flow |
 | `contracts.md` | ODCS contracts, schema definitions, contract loader |
 | `ingestion.md` | Adding new data sources, dlt pipelines |
+| `database.md` | Schema structure, tables, useful queries |
 | `ml-features.md` | ML model features, betting predictions |
 | `commands.md` | Full list of make commands, docker ops |
-| `database.md` | Schema info, table structures, queries |
 
 ## Code Locations
 - `ingestion/dlt/pipelines/` - dlt data pipelines
+- `ingestion/dlt/config.py` - NBA CDN endpoints, constants
 - `orchestration/dagster/assets/` - Dagster asset definitions
 - `transformation/sqlmesh/` - SQL transformations
-- `contracts/` - ODCS data contracts
+- `contracts/schemas/` - ODCS data contracts
+- `scripts/db_query.py` - Database query utility
+
+---
+
+## ✅ REQUIRED: Validation After Changes
+
+**All warehouse-related changes MUST be validated before considering complete.**
+
+### New Ingestion Asset
+```bash
+# 1. Run the asset
+dagster asset materialize -f definitions.py --select <asset_name>
+
+# 2. Verify data loaded
+python scripts/db_query.py "SELECT count(*) FROM raw_dev.<table_name>"
+python scripts/db_query.py "SELECT * FROM raw_dev.<table_name> LIMIT 5"
+
+# 3. Check for errors in output
+# Look for: "LOADED and contains no failed jobs"
+```
+
+### New dlt Resource
+```bash
+# 1. Test extraction locally first
+python -c "from ingestion.dlt.pipelines.nba_stats import <resource_name>; print(list(<resource_name>())[:3])"
+
+# 2. Then run full pipeline via Dagster asset
+dagster asset materialize -f definitions.py --select <asset_name>
+
+# 3. Validate in warehouse
+python scripts/db_query.py --counts raw_dev
+```
+
+### Schema/Contract Changes
+```bash
+# 1. Verify schema exists
+python scripts/db_query.py --schemas
+
+# 2. Check table structure
+python scripts/db_query.py "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'raw_dev' AND table_name = '<table>'"
+```
+
+### Database Changes (init.sql, migrations)
+```bash
+# 1. Recreate database (if needed)
+docker-compose down -v && docker-compose up -d
+
+# 2. Verify schemas created
+python scripts/db_query.py --schemas
+
+# 3. Verify tables
+python scripts/db_query.py --tables raw_dev
+python scripts/db_query.py --tables ml_dev
+```
+
+### Validation Checklist
+| Change Type | Validation Steps |
+|-------------|------------------|
+| New asset | Run asset → Query table → Check row count |
+| New dlt resource | Test locally → Run asset → Query data |
+| New schema | Check schema exists → Verify tables |
+| New table | Check table exists → Sample data |
+| Config change | Run affected asset → Verify output |
+
+---
+
+## ⚠️ IMPORTANT: Documentation Maintenance
+
+**After making changes, UPDATE THE RELEVANT DOCS in `.cursor/docs/`:**
+
+| Change Type | Docs to Update |
+|-------------|----------------|
+| Database schema changes | `database.md` |
+| New tables/schemas | `database.md`, `architecture.md` |
+| New make commands | `commands.md`, this file |
+| New data sources/endpoints | `ingestion.md`, `config.py` |
+| New contracts/schemas | `contracts.md` |
+| New assets/pipelines | `ingestion.md`, `architecture.md` |
+| ML features/models | `ml-features.md` |
+| Config changes | `commands.md` (env vars), relevant doc |
+
+**Checklist after significant changes:**
+1. [ ] Update relevant `.cursor/docs/*.md` files
+2. [ ] Update this `.cursorrules` quick reference if needed
+3. [ ] Update `README.md` if user-facing workflow changed
+4. [ ] Add/update docstrings in code
+
+**Keep docs in sync with reality - outdated docs are worse than no docs.**

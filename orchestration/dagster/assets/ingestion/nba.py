@@ -29,6 +29,7 @@ from ingestion.dlt.pipelines.nba_stats import (
     nba_boxscores_resource,
     nba_team_boxscores_resource,
 )
+from ingestion.dlt.config import DATASET_NAME, PIPELINE_NAME, DESTINATION
 
 
 class NBAIngestionConfig(Config):
@@ -56,12 +57,12 @@ def nba_teams(context, config: NBAIngestionConfig) -> dict:
     """
     try:
         # Create dlt pipeline
-        # Credentials are provided via environment variables in the format:
-        # NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST, etc.
+        # Credentials are provided via environment variables
+        # Dataset name is environment-aware (raw_dev, raw_staging, raw_prod)
         pipeline = dlt.pipeline(
-            pipeline_name="nba_stats",
-            destination="postgres",
-            dataset_name="nba",
+            pipeline_name=PIPELINE_NAME,
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
         )
         
         context.log.info("Starting NBA teams extraction from CDN...")
@@ -90,12 +91,12 @@ def nba_players(context, config: NBAIngestionConfig) -> dict:
     """
     try:
         pipeline = dlt.pipeline(
-            pipeline_name="nba_stats",
-            destination="postgres",
-            dataset_name="nba",
+            pipeline_name=PIPELINE_NAME,
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
         )
         
-        context.log.info("Starting NBA players extraction from CDN game leaders...")
+        context.log.info(f"Starting NBA players extraction to {DATASET_NAME}...")
         load_info = pipeline.run([nba_players_resource(season=config.season)])
         
         context.log.info(f"NBA players ingested: {load_info}")
@@ -123,9 +124,9 @@ def nba_games(context, config: NBAIngestionConfig) -> dict:
     """
     try:
         pipeline = dlt.pipeline(
-            pipeline_name="nba_stats",
-            destination="postgres",
-            dataset_name="nba",
+            pipeline_name=PIPELINE_NAME,
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
         )
         
         limit_msg = f" (limited to {config.games_limit})" if config.games_limit else ""
@@ -163,9 +164,9 @@ def nba_todays_games(context) -> dict:
     """
     try:
         pipeline = dlt.pipeline(
-            pipeline_name="nba_stats",
-            destination="postgres",
-            dataset_name="nba",
+            pipeline_name=PIPELINE_NAME,
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
         )
         
         context.log.info("Starting today's NBA games extraction from CDN...")
@@ -198,9 +199,9 @@ def nba_betting_odds(context) -> dict:
     """
     try:
         pipeline = dlt.pipeline(
-            pipeline_name="nba_stats",
-            destination="postgres",
-            dataset_name="nba",
+            pipeline_name=PIPELINE_NAME,
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
         )
         
         context.log.info("Starting betting odds extraction from CDN...")
@@ -238,9 +239,9 @@ def nba_boxscores(context, config: NBABoxscoreConfig) -> dict:
     """
     try:
         pipeline = dlt.pipeline(
-            pipeline_name="nba_stats",
-            destination="postgres",
-            dataset_name="nba",
+            pipeline_name=PIPELINE_NAME,
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
         )
         
         context.log.info(f"Starting boxscores extraction (limit={config.limit})...")
@@ -279,9 +280,9 @@ def nba_team_boxscores(context, config: NBABoxscoreConfig) -> dict:
     """
     try:
         pipeline = dlt.pipeline(
-            pipeline_name="nba_stats",
-            destination="postgres",
-            dataset_name="nba",
+            pipeline_name=PIPELINE_NAME,
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
         )
         
         context.log.info(f"Starting team boxscores extraction (limit={config.limit})...")

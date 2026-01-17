@@ -61,8 +61,19 @@ RATE_LIMIT_DELAY = 0.2
 
 # Default pipeline settings
 PIPELINE_NAME = "nba_stats"
-DATASET_NAME = "nba"
 DESTINATION = "postgres"
+
+# Environment-aware dataset naming
+# DATA_ENV can be: dev, staging, prod
+import os
+DATA_ENV = os.getenv("DATA_ENV", "dev")
+
+# Dataset name follows pattern: raw_{env} for ingestion
+# Transformations go to staging_{env}, marts_{env}, etc.
+DATASET_NAME = f"raw_{DATA_ENV}"
+
+# Legacy dataset name (for backward compatibility)
+LEGACY_DATASET_NAME = "nba"
 
 
 # =============================================================================

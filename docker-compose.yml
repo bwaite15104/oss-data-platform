@@ -3,11 +3,11 @@ services:
   # PostgreSQL - Data Warehouse
   postgres:
     image: postgres:15
-    container_name: oss_data_platform_postgres
+    container_name: nba_analytics_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-oss_data_platform}
+      POSTGRES_DB: ${POSTGRES_DB:-nba_analytics}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -46,19 +46,20 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: oss_data_platform_dagster_webserver
+    container_name: nba_analytics_dagster_webserver
     environment:
       - DAGSTER_HOME=/opt/dagster/dagster_home
-      - DAGSTER_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-oss_data_platform}
+      - DAGSTER_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-nba_analytics}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-oss_data_platform}
+      - POSTGRES_DB=${POSTGRES_DB:-nba_analytics}
+      - DATA_ENV=${DATA_ENV:-dev}
       # dlt configuration for nba_stats pipeline
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST=postgres
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PORT=5432
-      - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE=${POSTGRES_DB:-oss_data_platform}
+      - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE=${POSTGRES_DB:-nba_analytics}
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__USERNAME=${POSTGRES_USER:-postgres}
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PASSWORD=${POSTGRES_PASSWORD:-postgres}
     ports:
@@ -79,19 +80,20 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: oss_data_platform_dagster_daemon
+    container_name: nba_analytics_dagster_daemon
     environment:
       - DAGSTER_HOME=/opt/dagster/dagster_home
-      - DAGSTER_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-oss_data_platform}
+      - DAGSTER_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-nba_analytics}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-oss_data_platform}
+      - POSTGRES_DB=${POSTGRES_DB:-nba_analytics}
+      - DATA_ENV=${DATA_ENV:-dev}
       # dlt configuration for nba_stats pipeline
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST=postgres
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PORT=5432
-      - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE=${POSTGRES_DB:-oss_data_platform}
+      - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE=${POSTGRES_DB:-nba_analytics}
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__USERNAME=${POSTGRES_USER:-postgres}
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PASSWORD=${POSTGRES_PASSWORD:-postgres}
     volumes:

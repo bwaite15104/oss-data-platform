@@ -20,6 +20,12 @@ help:
 	@echo "  make generate-configs   - Generate all tool configs (includes contract composition)"
 	@echo "  make validate           - Validate ODCS configs and composed contracts"
 	@echo ""
+	@echo "Database:"
+	@echo "  make db-schemas         - List all database schemas"
+	@echo "  make db-tables          - List tables in raw_dev"
+	@echo "  make db-counts          - Show row counts in raw_dev"
+	@echo "  make db-psql            - Open psql shell"
+	@echo ""
 	@echo "Testing:"
 	@echo "  make test               - Run tests"
 	@echo "  make clean              - Clean generated files and caches"
@@ -42,17 +48,21 @@ dagster-dev:
 	@echo "Starting Dagster dev server..."
 	@echo "Make sure Docker services are running (make docker-up)"
 	@echo "Open http://localhost:3000"
+	@echo "Data will be loaded to: raw_dev schema"
 	POSTGRES_HOST=localhost \
+	DATA_ENV=dev \
 	NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST=localhost \
 	NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PORT=5432 \
-	NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE=oss_data_platform \
+	NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE=nba_analytics \
 	NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__USERNAME=postgres \
 	NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PASSWORD=postgres \
 	dagster dev -f definitions.py
 
 dagster-list:
 	@POSTGRES_HOST=localhost \
+	DATA_ENV=dev \
 	NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST=localhost \
+	NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE=nba_analytics \
 	dagster asset list -f definitions.py
 
 compose-contracts:
@@ -69,6 +79,22 @@ docker-up:
 
 docker-down:
 	docker-compose down
+
+# Database utilities (connects to nba_analytics by default)
+db-schemas:
+	@python scripts/db_query.py --schemas
+
+db-tables:
+	@python scripts/db_query.py --tables raw_dev
+
+db-counts:
+	@python scripts/db_query.py --counts raw_dev
+
+db-psql:
+	docker exec -it nba_analytics_postgres psql -U postgres -d nba_analytics
+
+db-query:
+	@echo "Usage: python scripts/db_query.py \"SELECT * FROM raw_dev.teams LIMIT 5\""
 
 test:
 	pytest tests/ -v --cov=adapters --cov=contracts --cov=tools
