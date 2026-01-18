@@ -3,6 +3,11 @@
 ## Project Overview
 NBA sports betting data platform. Goal: Build ML models to predict game outcomes for betting.
 
+## 🚫 CONSTRAINT: Free Services Only
+**All tools, APIs, and services MUST be free.** No paid subscriptions, API costs, or premium tiers.
+- ✅ Free: NBA CDN, open-source tools, free API tiers, scraping (if legal)
+- ❌ No: Paid APIs, premium subscriptions, usage-based pricing
+
 ## Quick Reference
 - **Dagster UI**: http://localhost:3000
 - **Metabase**: http://localhost:3002
@@ -109,6 +114,38 @@ python scripts/db_query.py --tables ml_dev
 | New schema | Check schema exists → Verify tables |
 | New table | Check table exists → Sample data |
 | Config change | Run affected asset → Verify output |
+
+---
+
+## 📋 REQUIRED: Keep Contracts Updated
+
+**When adding new schemas or modifying existing ones, ALWAYS recompose contracts:**
+
+```bash
+# After ANY change to contracts/schemas/*.yml:
+make compose-contracts
+
+# Verify all contracts exist
+ls contracts/contracts/
+```
+
+### Contract Workflow
+1. Edit schema in `contracts/schemas/<name>.yml`
+2. Run `make compose-contracts` to generate composed contract
+3. Verify `contracts/contracts/<name>.yml` was created/updated
+4. If adding new asset, also update `configs/odcs/datasets.yml`
+
+### Current Contracts (must match schemas/)
+```
+contracts/schemas/           contracts/contracts/
+├── nba_betting_odds.yml  → ├── nba_betting_odds.yml
+├── nba_boxscores.yml     → ├── nba_boxscores.yml
+├── nba_games.yml         → ├── nba_games.yml
+├── nba_players.yml       → ├── nba_players.yml
+├── nba_teams.yml         → ├── nba_teams.yml
+├── nba_todays_games.yml  → ├── nba_todays_games.yml
+└── ...                   → └── ...
+```
 
 ---
 

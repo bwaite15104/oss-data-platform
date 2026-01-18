@@ -1,0 +1,96 @@
+version: '1.0'
+name: nba_betting_odds
+schema:
+  name: nba_betting_odds
+  columns:
+  - name: game_id
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Game identifier
+  - name: book_name
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Sportsbook name
+  - name: market_type
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Market type (2way, spread, total)
+  - name: home_odds
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Home team moneyline odds (decimal)
+  - name: away_odds
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Away team moneyline odds (decimal)
+  - name: home_line
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Home team spread line
+  - name: away_line
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Away team spread line
+  - name: over_odds
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Over odds (decimal)
+  - name: under_odds
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Under odds (decimal)
+  - name: total_line
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Total points line (over/under)
+  - name: captured_at
+    type: timestamp
+    nullable: false
+    primary_key: false
+    unique: false
+    description: When odds were captured
+  primary_key:
+  - game_id
+  - book_name
+  - market_type
+  indexes:
+  - columns:
+    - game_id
+  - columns:
+    - market_type
+  - columns:
+    - captured_at
+  description: NBA betting odds from CDN odds endpoint - critical for ML betting models
+quality:
+  validation_rules: []
+  thresholds:
+    drift_low: 5.0
+    drift_medium: 15.0
+    drift_high: 30.0
+    freshness_hours: 24
+    availability: 99.9
+  profiling_enabled: true
+  drift_detection_enabled: true
+  drift_detection_strategy: absolute_threshold
+metadata:
+  owner: data-engineering@company.com

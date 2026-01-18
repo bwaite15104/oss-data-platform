@@ -1,5 +1,5 @@
 load_from:
   - python_file:
-      relative_path: definitions.py
-      working_directory: /opt/dagster/dagster_home
+      relative_path: /app/definitions.py
+      working_directory: /app
 

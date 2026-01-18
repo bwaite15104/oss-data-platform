@@ -1,146 +1,134 @@
 version: '1.0'
-name: nba_players
+name: nba_team_boxscores
 schema:
-  name: nba_players
+  name: nba_team_boxscores
   columns:
-  - name: player_id
-    type: integer
-    nullable: false
-    primary_key: true
-    unique: false
-    description: Unique player identifier
-  - name: first_name
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: Player first name
-  - name: last_name
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: Player last name
-  - name: player_name
+  - name: game_id
     type: string
     nullable: false
     primary_key: false
     unique: false
-    description: Player full name
-  - name: player_slug
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: URL-friendly player identifier
+    description: Game identifier
   - name: team_id
     type: integer
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Team identifier
+  - name: game_date
+    type: string
     nullable: true
     primary_key: false
     unique: false
-    description: Current team ID
+    description: Game date (YYYY-MM-DD)
   - name: team_name
     type: string
     nullable: true
     primary_key: false
     unique: false
-    description: Current team name
+    description: Team name
   - name: team_city
     type: string
     nullable: true
     primary_key: false
     unique: false
-    description: Current team city
-  - name: team_abbreviation
-    type: string
+    description: Team city
+  - name: is_home
+    type: boolean
     nullable: true
     primary_key: false
     unique: false
-    description: Current team abbreviation
-  - name: jersey_number
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: Player jersey number
-  - name: position
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: Player position (G, F, C, G-F, etc.)
-  - name: height
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: Player height (e.g., "6-8")
-  - name: weight
+    description: Whether team is home team
+  - name: points
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: Player weight in pounds
-  - name: college
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: College attended
-  - name: country
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: Country of origin
-  - name: draft_year
+    description: Total points scored
+  - name: assists
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: Year drafted
-  - name: draft_round
+    description: Total assists
+  - name: rebounds_total
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: Draft round
-  - name: draft_number
+    description: Total rebounds
+  - name: steals
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: Draft pick number
-  - name: from_year
+    description: Total steals
+  - name: blocks
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: First year in NBA
-  - name: to_year
+    description: Total blocks
+  - name: turnovers
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: Last year in NBA (for retired players)
-  - name: career_pts
+    description: Total turnovers
+  - name: field_goals_made
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Field goals made
+  - name: field_goals_attempted
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Field goals attempted
+  - name: field_goal_pct
     type: float
     nullable: true
     primary_key: false
     unique: false
-    description: Career points per game average
-  - name: career_reb
+    description: Team field goal percentage
+  - name: three_pointers_made
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Three pointers made
+  - name: three_pointers_attempted
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Three pointers attempted
+  - name: three_point_pct
     type: float
     nullable: true
     primary_key: false
     unique: false
-    description: Career rebounds per game average
-  - name: career_ast
+    description: Team three point percentage
+  - name: free_throws_made
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Free throws made
+  - name: free_throws_attempted
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Free throws attempted
+  - name: free_throw_pct
     type: float
     nullable: true
     primary_key: false
     unique: false
-    description: Career assists per game average
+    description: Team free throw percentage
   - name: created_at
     type: timestamp
     nullable: false
@@ -148,15 +136,16 @@ schema:
     unique: false
     description: Record creation timestamp
   primary_key:
-  - player_id
+  - game_id
+  - team_id
   indexes:
   - columns:
-    - player_name
+    - game_id
   - columns:
     - team_id
   - columns:
-    - position
-  description: NBA player information from CDN player index endpoint
+    - game_date
+  description: NBA team boxscore statistics aggregated per game
 quality:
   validation_rules: []
   thresholds:

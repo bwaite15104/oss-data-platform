@@ -1,32 +1,32 @@
 version: '1.0'
-name: nba_games
+name: nba_todays_games
 schema:
-  name: nba_games
+  name: nba_todays_games
   columns:
   - name: game_id
     type: string
     nullable: false
     primary_key: true
     unique: false
-    description: Unique game identifier (e.g., "0022500123")
+    description: Unique game identifier
   - name: game_date
     type: string
     nullable: true
     primary_key: false
     unique: false
-    description: Date of the game (YYYY-MM-DD)
+    description: Game date
   - name: season
     type: string
     nullable: false
     primary_key: false
     unique: false
-    description: NBA season (e.g., "2025-26")
+    description: NBA season
   - name: season_type
     type: string
     nullable: false
     primary_key: false
     unique: false
-    description: Type of season (Regular Season, Playoffs, Play-In)
+    description: Season type
   - name: home_team_id
     type: integer
     nullable: true
@@ -44,55 +44,49 @@ schema:
     nullable: true
     primary_key: false
     unique: false
-    description: Home team full name
+    description: Home team name
   - name: away_team_name
     type: string
     nullable: true
     primary_key: false
     unique: false
-    description: Away team full name
+    description: Away team name
   - name: home_score
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: Home team final score
+    description: Home team current score
   - name: away_score
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: Away team final score
+    description: Away team current score
   - name: winner_team_id
     type: integer
     nullable: true
     primary_key: false
     unique: false
-    description: Winning team ID (null if not finished)
+    description: Winning team ID (if game finished)
   - name: game_status
     type: string
     nullable: true
     primary_key: false
     unique: false
-    description: Game status text (Final, Scheduled, In Progress)
-  - name: venue
+    description: Game status text
+  - name: period
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Current period (1-4, OT)
+  - name: game_clock
     type: string
     nullable: true
     primary_key: false
     unique: false
-    description: Arena/venue name
-  - name: arena_city
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: Arena city
-  - name: arena_state
-    type: string
-    nullable: true
-    primary_key: false
-    unique: false
-    description: Arena state
+    description: Current game clock
   - name: created_at
     type: timestamp
     nullable: false
@@ -105,12 +99,8 @@ schema:
   - columns:
     - game_date
   - columns:
-    - home_team_id
-  - columns:
-    - away_team_id
-  - columns:
-    - season
-  description: NBA game schedule and results from CDN schedule endpoint
+    - game_status
+  description: Today's NBA games with live scores from CDN scoreboard endpoint
 quality:
   validation_rules: []
   thresholds:

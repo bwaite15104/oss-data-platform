@@ -18,17 +18,17 @@ from dagster import Definitions, load_assets_from_modules
 # Import asset modules
 from orchestration.dagster.assets import ingestion, transformation
 
-# Load assets from modules (skip quality for local dev - requires baselinr config)
+# Import schedules
+from orchestration.dagster.schedules import schedules, jobs
+
+# Load assets from modules
 all_assets = load_assets_from_modules([ingestion, transformation])
 
-# Try to load quality assets if baselinr config exists
-try:
-    from orchestration.dagster.assets import quality
-    quality_assets = load_assets_from_modules([quality])
-    all_assets = all_assets + quality_assets
-except Exception as e:
-    print(f"Note: Quality assets not loaded (run 'make generate-configs' first): {e}")
+# Skip quality assets for now - requires Baselinr config that's complex to setup in Docker
+# To enable: run `make generate-configs` and ensure baselinr_config.yml exists
 
 defs = Definitions(
     assets=all_assets,
+    jobs=jobs,
+    schedules=schedules,
 )

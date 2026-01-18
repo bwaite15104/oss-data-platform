@@ -202,15 +202,35 @@ See individual contract files for column definitions:
 
 Use `make db-counts` or `python scripts/db_query.py --counts raw_dev` to check current data:
 
-| Table | Description | Typical Count |
+| Table | Description | Current Count |
 |-------|-------------|---------------|
-| `teams` | NBA teams + international | ~34 |
-| `players` | All players from CDN | ~500+ |
-| `games` | Full season schedule | ~1,300 |
+| `teams` | NBA teams + international | 34 |
+| `players` | All players from CDN | 527 |
+| `games` | Full season schedule | 1,306 |
+| `boxscores` | Player game stats (all completed games) | 24,468 |
+| `team_boxscores` | Team game stats (all completed games) | 1,378 |
+| `injuries` | Current injury report (ESPN) | 118 |
 | `todays_games` | Today's live games | 0-15 |
-| `betting_odds` | Today's odds | varies |
-| `boxscores` | Player game stats | varies |
-| `team_boxscores` | Team game stats | varies |
+| `betting_odds` | Today's odds | 280 |
+
+### Transformation Views
+
+| Layer | View | Description | Count |
+|-------|------|-------------|-------|
+| staging | `stg_*` | Cleaned raw data | 5 views |
+| intermediate | `int_team_season_stats` | Season aggregates | 31 |
+| intermediate | `int_team_rolling_stats` | Rolling 5/10 game stats | 1,219 |
+| marts | `mart_game_features` | ML-ready game features | 584 |
+| marts | `mart_team_standings` | Current standings | 31 |
+
+### Feature Store (features_dev)
+
+| Table | Description | Count |
+|-------|-------------|-------|
+| `game_features` | ML training features | 584 |
+| `team_features` | Team season stats | 31 |
+| `team_injury_features` | Injury counts by team | 29 |
+| `feature_registry` | Feature metadata | 11 |
 
 ## Useful Queries
 

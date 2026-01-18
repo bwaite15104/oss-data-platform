@@ -1,0 +1,230 @@
+version: '1.0'
+name: nba_boxscores
+schema:
+  name: nba_boxscores
+  columns:
+  - name: game_id
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Game identifier
+  - name: player_id
+    type: integer
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Player identifier
+  - name: game_date
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Game date (YYYY-MM-DD)
+  - name: player_name
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Player name
+  - name: team_id
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Team identifier
+  - name: is_home
+    type: boolean
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Whether player's team is home team
+  - name: is_starter
+    type: boolean
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Whether player started the game
+  - name: minutes
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Minutes played (MM:SS format)
+  - name: minutes_calculated
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Calculated minutes string
+  - name: points
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Points scored
+  - name: assists
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Assists
+  - name: rebounds_total
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Total rebounds
+  - name: rebounds_offensive
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Offensive rebounds
+  - name: rebounds_defensive
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Defensive rebounds
+  - name: steals
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Steals
+  - name: blocks
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Blocks
+  - name: turnovers
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Turnovers
+  - name: fouls_personal
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Personal fouls
+  - name: fouls_technical
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Technical fouls
+  - name: field_goals_made
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Field goals made
+  - name: field_goals_attempted
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Field goals attempted
+  - name: field_goal_pct
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Field goal percentage
+  - name: three_pointers_made
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Three pointers made
+  - name: three_pointers_attempted
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Three pointers attempted
+  - name: three_point_pct
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Three point percentage
+  - name: free_throws_made
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Free throws made
+  - name: free_throws_attempted
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Free throws attempted
+  - name: free_throw_pct
+    type: float
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Free throw percentage
+  - name: plus_minus
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Plus/minus statistic
+  - name: points_fast_break
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Fast break points
+  - name: points_in_paint
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Points in the paint
+  - name: points_second_chance
+    type: integer
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Second chance points
+  - name: created_at
+    type: timestamp
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Record creation timestamp
+  primary_key:
+  - game_id
+  - player_id
+  indexes:
+  - columns:
+    - game_id
+  - columns:
+    - player_id
+  - columns:
+    - team_id
+  - columns:
+    - game_date
+  description: NBA player boxscore statistics from CDN boxscore endpoint - critical
+    for ML models
+quality:
+  validation_rules: []
+  thresholds:
+    drift_low: 5.0
+    drift_medium: 15.0
+    drift_high: 30.0
+    freshness_hours: 24
+    availability: 99.9
+  profiling_enabled: true
+  drift_detection_enabled: true
+  drift_detection_strategy: absolute_threshold
+metadata:
+  owner: data-engineering@company.com

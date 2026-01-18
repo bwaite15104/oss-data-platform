@@ -29,6 +29,7 @@ from ingestion.dlt.pipelines.nba_stats import (
     nba_boxscores_resource,
     nba_team_boxscores_resource,
 )
+from ingestion.dlt.pipelines.nba_injuries import nba_injuries_resource
 from ingestion.dlt.config import DATASET_NAME, PIPELINE_NAME, DESTINATION
 
 
@@ -40,7 +41,7 @@ class NBAIngestionConfig(Config):
 
 class NBABoxscoreConfig(Config):
     """Configuration for boxscore ingestion."""
-    limit: Optional[int] = Field(default=10, description="Limit number of games to fetch boxscores for")
+    limit: Optional[int] = Field(default=None, description="Limit number of games (None = all completed games)")
     completed_only: bool = Field(default=True, description="Only fetch completed games")
 
 
@@ -300,4 +301,36 @@ def nba_team_boxscores(context, config: NBABoxscoreConfig) -> dict:
         }
     except Exception as e:
         context.log.error(f"Team boxscores ingestion failed: {e}")
+        raise
+
+
+@asset(
+    group_name="nba_ingestion",
+    compute_kind="python",
+    description="NBA player injury data from ESPN (point-in-time snapshot)",
+)
+def nba_injuries(context) -> dict:
+    """
+    Ingest current NBA injury data from ESPN.
+    
+    This is a point-in-time snapshot - should be run daily to build historical data.
+    """
+    context.log.info("Starting injuries extraction from ESPN...")
+    
+    pipeline = dlt.pipeline(
+        pipeline_name=PIPELINE_NAME,
+        destination=DESTINATION,
+        dataset_name=DATASET_NAME,
+    )
+    
+    try:
+        load_info = pipeline.run([nba_injuries_resource()])
+        
+        context.log.info(f"Injuries ingested: {load_info}")
+        return {
+            "status": "success",
+            "load_id": str(load_info.loads_ids[0]) if load_info.loads_ids else None,
+        }
+    except Exception as e:
+        context.log.error(f"Injuries ingestion failed: {e}")
         raise

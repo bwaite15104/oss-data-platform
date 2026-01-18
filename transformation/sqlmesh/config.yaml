@@ -1,17 +1,22 @@
 gateways:
-  default:
+  local:
     connection:
       type: postgres
-      host: ${POSTGRES_HOST}
-      port: ${POSTGRES_PORT}
-      user: ${POSTGRES_USER}
-      password: ${POSTGRES_PASSWORD}
-      database: ${POSTGRES_DB}
+      host: localhost
+      port: 5432
+      user: postgres
+      password: postgres
+      database: nba_analytics
 
-default_gateway: default
+default_gateway: local
 
 model_defaults:
-  kind: VIEW
-  start: '2024-01-01'
-  cron: '@daily'
+  dialect: postgres
+  start: '2024-10-01'
 
+# Physical schema mapping
+physical_schema_mapping:
+  staging: staging
+  intermediate: intermediate
+  marts: marts
+  features_dev: features_dev

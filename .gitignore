@@ -68,9 +68,13 @@ catalog/datahub/data/
 # Dagster
 dagster_home/
 *.db
+# Dagster run storage and compute logs (runtime artifacts)
+orchestration/dagster/storage/
+orchestration/dagster/logs/
 
 # SQLMesh
 .sqlmesh/
+transformation/sqlmesh/.cache/
 
 # Airbyte
 ingestion/airbyte/.env

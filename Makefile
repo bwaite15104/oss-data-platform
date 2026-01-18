@@ -96,6 +96,26 @@ db-psql:
 db-query:
 	@echo "Usage: python scripts/db_query.py \"SELECT * FROM raw_dev.teams LIMIT 5\""
 
+# Transformation & Feature Store (SQLMesh)
+SQLMESH = $(LOCALAPPDATA)/Programs/Python/Python312/Scripts/sqlmesh.exe
+
+sqlmesh-plan:
+	cd transformation/sqlmesh && "$(SQLMESH)" plan --auto-apply
+
+sqlmesh-run:
+	cd transformation/sqlmesh && "$(SQLMESH)" run
+
+sqlmesh-info:
+	cd transformation/sqlmesh && "$(SQLMESH)" info
+
+refresh-all: sqlmesh-plan
+	@echo "SQLMesh models refreshed!"
+
+# Daily data refresh (run manually or use Dagster schedules)
+daily-refresh:
+	@POSTGRES_DB=nba_analytics DATA_ENV=dev dagster asset materialize -f definitions.py \
+		--select "nba_games" "nba_todays_games" "nba_betting_odds" "nba_injuries"
+
 test:
 	pytest tests/ -v --cov=adapters --cov=contracts --cov=tools
 

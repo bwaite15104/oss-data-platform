@@ -9,5 +9,6 @@ from .nba import (
     nba_betting_odds,
     nba_boxscores,
     nba_team_boxscores,
+    nba_injuries,
 )
 

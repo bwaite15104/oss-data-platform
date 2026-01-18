@@ -1,0 +1,90 @@
+version: '1.0'
+name: nba_injuries
+schema:
+  name: nba_injuries
+  columns:
+  - name: injury_id
+    type: string
+    nullable: false
+    primary_key: true
+    unique: false
+    description: Unique identifier (date_team_player)
+  - name: capture_date
+    type: date
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Date when injury data was captured
+  - name: player_name
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Player full name
+  - name: player_espn_id
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: ESPN player ID (if available)
+  - name: team_name
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Team full name
+  - name: team_abbrev
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Team abbreviation (e.g., LAL, BOS)
+  - name: status
+    type: string
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Injury status (Out, Doubtful, Questionable, Probable, Day-to-Day)
+  - name: status_raw
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Raw status text from ESPN
+  - name: injury_details
+    type: string
+    nullable: true
+    primary_key: false
+    unique: false
+    description: Injury description/comment
+  - name: captured_at
+    type: timestamp
+    nullable: false
+    primary_key: false
+    unique: false
+    description: Exact timestamp when data was captured
+  primary_key:
+  - injury_id
+  indexes:
+  - columns:
+    - capture_date
+  - columns:
+    - team_abbrev
+  - columns:
+    - player_name
+  - columns:
+    - status
+  description: NBA player injury status from ESPN (point-in-time snapshots)
+quality:
+  validation_rules: []
+  thresholds:
+    drift_low: 5.0
+    drift_medium: 15.0
+    drift_high: 30.0
+    freshness_hours: 24
+    availability: 99.9
+  profiling_enabled: true
+  drift_detection_enabled: true
+  drift_detection_strategy: absolute_threshold
+metadata:
+  owner: data-engineering@company.com

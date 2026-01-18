@@ -38,6 +38,13 @@ make generate-configs  # Generate tool configs from ODCS
 make validate          # Validate ODCS configs
 ```
 
+### Transformations (SQLMesh)
+```bash
+make sqlmesh-plan      # Plan and apply all SQLMesh models
+make sqlmesh-run       # Run SQLMesh models
+make sqlmesh-info      # Show SQLMesh project info
+```
+
 ### Testing & Cleanup
 ```bash
 make test              # Run test suite
@@ -81,6 +88,33 @@ python scripts/db_query.py "SELECT * FROM raw_dev.todays_games"
 
 # Player counts by team
 python scripts/db_query.py "SELECT team_name, count(*) FROM raw_dev.players GROUP BY team_name ORDER BY count(*) DESC"
+```
+
+## SQLMesh Transformations
+
+### Run Models
+```bash
+# From project root
+make sqlmesh-plan      # Plan and apply all models
+
+# Or directly from sqlmesh directory
+cd transformation/sqlmesh
+sqlmesh plan --auto-apply    # Plan and apply changes
+sqlmesh run                   # Run incremental models
+sqlmesh info                  # Show model info
+sqlmesh ui                    # Start SQLMesh web UI
+```
+
+### Model Types
+- `staging.*` - Views cleaning raw data
+- `intermediate.*` - Rolling stats and aggregations
+- `marts.*` - Business-ready data
+- `features_dev.*` - ML feature tables (FULL materialization)
+
+### Verify Feature Store
+```bash
+python scripts/db_query.py --counts features_dev
+python scripts/db_query.py "SELECT * FROM features_dev.game_features LIMIT 5"
 ```
 
 ## Local Dagster CLI
