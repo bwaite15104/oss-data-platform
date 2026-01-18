@@ -32,15 +32,42 @@ NBA_CDN_BOXSCORE = "https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{
 ```
 
 ## Current Assets
-| Asset | Table | Description |
-|-------|-------|-------------|
-| `nba_teams` | `nba.teams` | All NBA teams |
-| `nba_players` | `nba.players` | Active player rosters |
-| `nba_games` | `nba.games` | Full season schedule |
-| `nba_todays_games` | `nba.todays_games` | Live scoreboard |
-| `nba_betting_odds` | `nba.betting_odds` | Sportsbook odds |
-| `nba_boxscores` | `nba.boxscores` | Player game stats |
-| `nba_team_boxscores` | `nba.team_boxscores` | Team game stats |
+| Asset | Table | Incremental? | Notes |
+|-------|-------|--------------|-------|
+| `nba_teams` | `raw_dev.teams` | ✅ Yes | Small dataset, merge dedupes |
+| `nba_players` | `raw_dev.players` | ✅ Yes | Small dataset, merge dedupes |
+| `nba_games` | `raw_dev.games` | ✅ Yes | Merge dedupes by game_id |
+| `nba_todays_games` | `raw_dev.todays_games` | ✅ Yes | Today's games only, merge dedupes |
+| `nba_betting_odds` | `raw_dev.betting_odds` | ✅ Yes | Today's odds, merge dedupes |
+| `nba_boxscores` | `raw_dev.boxscores` | ⚠️ Partial | **Fetches ALL completed games each run** - merge prevents duplicates but still makes API calls |
+| `nba_team_boxscores` | `raw_dev.team_boxscores` | ⚠️ Partial | **Fetches ALL completed games each run** - merge prevents duplicates but still makes API calls |
+| `nba_injuries` | `raw_dev.injuries` | ❌ No | Point-in-time snapshot (replace each run) |
+
+## Incremental Loading Status
+
+### ✅ True Incremental (No Re-fetching)
+- **`nba_teams`**, **`nba_players`**: Small datasets, `merge` prevents duplicates
+- **`nba_games`**: Full schedule, `merge` updates existing games
+- **`nba_todays_games`**: Only fetches today's games
+- **`nba_betting_odds`**: Only fetches today's odds
+
+### ✅ True Incremental (Query Existing Games Before Fetching)
+**`nba_boxscores`** and **`nba_team_boxscores`**:
+- **Behavior**: Queries database for existing `game_id`s before fetching
+- **Skips**: Games that already exist in database (no API calls)
+- **Fetches**: Only new games that don't exist yet
+- **Protection**: `write_disposition="merge"` with `primary_key` as backup protection
+
+**Example logs:**
+```
+INFO: Found 690 existing game_ids in raw_dev.boxscores
+INFO: ⏭️  Skipping 690 existing games (incremental loading). 0 new games to fetch.
+```
+
+**Result**: Daily runs only fetch ~2-5 new games instead of all 1,300+ games!
+
+### ❌ Replace (Not Incremental)
+- **`nba_injuries`**: Point-in-time snapshot, replaces all rows each run
 
 ## Adding a New Data Source (Contract-First)
 

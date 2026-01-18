@@ -3,6 +3,17 @@
 ## Project Overview
 NBA sports betting data platform. Goal: Build ML models to predict game outcomes for betting.
 
+## ⚠️ CRITICAL: LLM Must Automatically Validate Changes
+
+**When making ANY change to assets, jobs, pipelines, schemas, or tables, the LLM MUST automatically validate using available tools:**
+
+1. **Run Dagster CLI commands** using `run_terminal_cmd` to execute assets/jobs
+2. **Query warehouse** using `run_terminal_cmd` with `python scripts/db_query.py` to verify data
+3. **Check execution output** for success indicators ("RUN_SUCCESS", "LOADED and contains no failed jobs")
+4. **Only mark changes complete** after validation succeeds - if validation fails, fix issues before proceeding
+
+**The LLM should NOT skip validation or assume changes work. Always run the validation commands after making changes.**
+
 ## 🚫 CONSTRAINT: Free Services Only
 **All tools, APIs, and services MUST be free.** No paid subscriptions, API costs, or premium tiers.
 - ✅ Free: NBA CDN, open-source tools, free API tiers, scraping (if legal)
@@ -55,65 +66,177 @@ For detailed context, reference these docs in `.cursor/docs/`:
 
 ---
 
-## ✅ REQUIRED: Validation After Changes
+## ✅ REQUIRED: LLM Automatic Validation
 
-**All warehouse-related changes MUST be validated before considering complete.**
+**⚠️ CRITICAL: The LLM MUST automatically validate changes using available tools (run_terminal_cmd). Do not skip this step.**
 
-### New Ingestion Asset
+**After making ANY change that impacts tables, assets, jobs, or warehouse data, the LLM MUST:**
+1. Execute Dagster CLI commands to run the changed asset/job
+2. Query the warehouse to verify data loaded correctly
+3. Check execution logs for success/failure
+4. Only proceed if validation succeeds - otherwise fix issues and re-validate
+
+**Validation should happen automatically as part of the change, not as a separate manual step.**
+
+This includes (but not limited to):
+- **New or modified Dagster assets**
+- **New or modified Dagster jobs/schedules**
+- **Changes to dlt pipelines or resources**
+- **Database schema/table changes**
+- **Contract/schema modifications**
+- **Config changes affecting data ingestion/transformation**
+- **SQLMesh model changes**
+
+### Standard Validation Workflow (LLM Should Execute Automatically)
+
+**The LLM must execute these steps automatically after making changes:**
+
+**1. Run the change using Dagster CLI (via run_terminal_cmd):**
 ```bash
-# 1. Run the asset
-dagster asset materialize -f definitions.py --select <asset_name>
+# For assets:
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <asset_name>
 
-# 2. Verify data loaded
+# For jobs:
+docker exec nba_analytics_dagster_webserver dagster job execute -f /app/definitions.py -j <job_name>
+
+# Local Dagster (if using make dagster-dev):
+dagster asset materialize -f definitions.py --select <asset_name>
+dagster job execute -f definitions.py -j <job_name>
+```
+
+**2. Verify data in warehouse (via run_terminal_cmd with db_query.py):**
+```bash
+# Check row counts
+python scripts/db_query.py --counts raw_dev
+python scripts/db_query.py "SELECT count(*) FROM raw_dev.<table_name>"
+
+# Sample data
+python scripts/db_query.py "SELECT * FROM raw_dev.<table_name> LIMIT 5"
+
+# Verify structure
+python scripts/db_query.py --schemas
+python scripts/db_query.py --tables raw_dev
+```
+
+**3. Check execution logs in terminal output:**
+- Verify presence of: `"LOADED and contains no failed jobs"` or `"RUN_SUCCESS"`
+- Confirm no errors in Dagster output
+- Verify expected rows were processed (counts should be reasonable, not zero unless expected)
+- **If validation fails, the LLM must fix issues and re-run validation before proceeding**
+
+### Validation by Change Type (LLM Must Execute These)
+
+**The LLM should automatically run these validation commands after making the corresponding changes:**
+
+#### New/Modified Ingestion Asset
+**After creating/modifying an ingestion asset, LLM must run:**
+```bash
+# 1. Run asset via Dagster CLI
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <asset_name>
+
+# 2. Verify table exists and has data
 python scripts/db_query.py "SELECT count(*) FROM raw_dev.<table_name>"
 python scripts/db_query.py "SELECT * FROM raw_dev.<table_name> LIMIT 5"
 
-# 3. Check for errors in output
-# Look for: "LOADED and contains no failed jobs"
+# 3. Check for errors (should see "RUN_SUCCESS" or "LOADED and contains no failed jobs")
 ```
 
-### New dlt Resource
+#### New/Modified Dagster Job or Schedule
+**After creating/modifying a job or schedule, LLM must run:**
 ```bash
-# 1. Test extraction locally first
-python -c "from ingestion.dlt.pipelines.nba_stats import <resource_name>; print(list(<resource_name>())[:3])"
+# 1. Verify job exists
+docker exec nba_analytics_dagster_webserver dagster job list -f /app/definitions.py
 
-# 2. Then run full pipeline via Dagster asset
-dagster asset materialize -f definitions.py --select <asset_name>
+# 2. Execute the job
+docker exec nba_analytics_dagster_webserver dagster job execute -f /app/definitions.py -j <job_name>
 
-# 3. Validate in warehouse
+# 3. Verify all assets in job completed successfully
+# Check logs for each asset materialization
+
+# 4. Validate affected tables
 python scripts/db_query.py --counts raw_dev
 ```
 
-### Schema/Contract Changes
+#### New/Modified dlt Resource or Pipeline
+**After creating/modifying a dlt resource or pipeline, LLM must run:**
 ```bash
-# 1. Verify schema exists
-python scripts/db_query.py --schemas
+# 1. Test extraction locally (optional, for debugging)
+python -c "from ingestion.dlt.pipelines.nba_stats import <resource_name>; print(list(<resource_name>())[:3])"
 
-# 2. Check table structure
-python scripts/db_query.py "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'raw_dev' AND table_name = '<table>'"
+# 2. Run full pipeline via Dagster asset
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <asset_name>
+
+# 3. Validate data loaded correctly
+python scripts/db_query.py --counts raw_dev
+python scripts/db_query.py "SELECT * FROM raw_dev.<table_name> LIMIT 5"
 ```
 
-### Database Changes (init.sql, migrations)
+#### Schema/Contract Changes
+**After modifying schemas or contracts, LLM must run:**
 ```bash
-# 1. Recreate database (if needed)
+# 1. Run affected asset to create/update table
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <asset_name>
+
+# 2. Verify schema exists
+python scripts/db_query.py --schemas
+
+# 3. Check table structure matches contract
+python scripts/db_query.py "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'raw_dev' AND table_name = '<table>' ORDER BY ordinal_position"
+```
+
+#### Database Changes (init.sql, schema changes)
+**After database changes, LLM must run:**
+```bash
+# 1. Restart services to apply changes
 docker-compose down -v && docker-compose up -d
 
 # 2. Verify schemas created
 python scripts/db_query.py --schemas
 
-# 3. Verify tables
+# 3. Verify tables exist
 python scripts/db_query.py --tables raw_dev
+python scripts/db_query.py --tables staging_dev
+python scripts/db_query.py --tables marts_dev
+python scripts/db_query.py --tables features_dev
 python scripts/db_query.py --tables ml_dev
+
+# 4. If schema changed, run affected assets
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <affected_assets>
 ```
 
-### Validation Checklist
-| Change Type | Validation Steps |
-|-------------|------------------|
-| New asset | Run asset → Query table → Check row count |
-| New dlt resource | Test locally → Run asset → Query data |
-| New schema | Check schema exists → Verify tables |
-| New table | Check table exists → Sample data |
-| Config change | Run affected asset → Verify output |
+#### SQLMesh Model Changes
+**After SQLMesh model changes, LLM must run:**
+```bash
+# 1. Plan changes
+make sqlmesh-plan
+
+# 2. Apply changes
+make sqlmesh-run
+
+# 3. Verify data in target schemas
+python scripts/db_query.py "SELECT count(*) FROM staging_dev.<table>"
+python scripts/db_query.py "SELECT count(*) FROM marts_dev.<table>"
+```
+
+### LLM Validation Checklist (Must Complete Automatically)
+
+**The LLM MUST automatically verify these items after making changes (using run_terminal_cmd):**
+
+- [ ] Execute Dagster CLI command - check output shows success (no errors)
+- [ ] Query warehouse to verify tables exist in expected schemas
+- [ ] Query warehouse to verify row counts are reasonable (not zero unless expected)
+- [ ] Query warehouse to verify data structure matches contracts/schemas
+- [ ] Query warehouse to sample data and verify it looks correct
+- [ ] Parse terminal output to confirm no errors in Dagster logs
+- [ ] If job/schedule changed, execute job and verify it completes successfully
+
+**If ANY validation fails, the LLM must:**
+1. Identify the issue from terminal output
+2. Fix the problem
+3. Re-run validation commands
+4. Only proceed once all validations pass
+
+**The LLM should NOT skip validation steps or assume changes work without testing.**
 
 ---
 

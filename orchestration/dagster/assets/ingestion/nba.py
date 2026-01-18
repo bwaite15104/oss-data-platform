@@ -1,6 +1,6 @@
 """NBA data ingestion assets using reliable NBA CDN endpoints."""
 
-from dagster import asset, Config
+from dagster import asset, Config, AutomationCondition
 from pydantic import Field
 from typing import Optional
 import dlt
@@ -48,6 +48,7 @@ class NBABoxscoreConfig(Config):
 @asset(
     group_name="nba_ingestion",
     description="Ingest NBA teams data from NBA CDN",
+    automation_condition=AutomationCondition.on_cron("@daily"),  # Daily refresh
 )
 def nba_teams(context, config: NBAIngestionConfig) -> dict:
     """
@@ -82,6 +83,7 @@ def nba_teams(context, config: NBAIngestionConfig) -> dict:
 @asset(
     group_name="nba_ingestion",
     description="Ingest NBA players data from NBA CDN (limited to game leaders)",
+    automation_condition=AutomationCondition.on_cron("@daily"),  # Daily refresh
 )
 def nba_players(context, config: NBAIngestionConfig) -> dict:
     """
@@ -115,6 +117,7 @@ def nba_players(context, config: NBAIngestionConfig) -> dict:
     group_name="nba_ingestion",
     description="Ingest full NBA season schedule from NBA CDN",
     deps=[nba_teams],
+    automation_condition=AutomationCondition.eager(),  # Run when teams update
 )
 def nba_games(context, config: NBAIngestionConfig) -> dict:
     """
@@ -153,6 +156,7 @@ def nba_games(context, config: NBAIngestionConfig) -> dict:
 @asset(
     group_name="nba_ingestion",
     description="Ingest today's NBA games with live scores from NBA CDN",
+    automation_condition=AutomationCondition.on_cron("@daily"),  # Daily refresh
 )
 def nba_todays_games(context) -> dict:
     """
@@ -186,6 +190,7 @@ def nba_todays_games(context) -> dict:
 @asset(
     group_name="nba_ingestion",
     description="Ingest betting odds for today's NBA games - CRITICAL FOR ML BETTING MODELS",
+    automation_condition=AutomationCondition.on_cron("@daily"),  # Daily refresh
 )
 def nba_betting_odds(context) -> dict:
     """
@@ -222,6 +227,7 @@ def nba_betting_odds(context) -> dict:
     group_name="nba_ingestion",
     description="Ingest player-level boxscore stats from completed games",
     deps=[nba_games],
+    automation_condition=AutomationCondition.eager(),  # Run when games update
 )
 def nba_boxscores(context, config: NBABoxscoreConfig) -> dict:
     """
@@ -246,18 +252,35 @@ def nba_boxscores(context, config: NBABoxscoreConfig) -> dict:
         )
         
         context.log.info(f"Starting boxscores extraction (limit={config.limit})...")
-        load_info = pipeline.run([
-            nba_boxscores_resource(
-                limit=config.limit,
-                completed_only=config.completed_only,
-            )
-        ])
         
-        context.log.info(f"Boxscores ingested: {load_info}")
-        return {
-            "status": "success",
-            "load_id": str(load_info.loads_ids[0]) if load_info.loads_ids else None,
-        }
+        # Handle case where incremental loading results in 0 games to process
+        # dlt has issues normalizing empty resources, so we check first
+        resource = nba_boxscores_resource(
+            limit=config.limit,
+            completed_only=config.completed_only,
+        )
+        
+        # Try to get first item to see if resource has data
+        # If it's empty (all games skipped), handle gracefully
+        try:
+            load_info = pipeline.run([resource])
+            context.log.info(f"Boxscores ingested: {load_info}")
+            return {
+                "status": "success",
+                "load_id": str(load_info.loads_ids[0]) if load_info.loads_ids else None,
+            }
+        except FileNotFoundError as e:
+            # Handle dlt issue when resource yields no data (incremental loading skipped all games)
+            # dlt can't normalize empty resources and raises FileNotFoundError for missing normalize directories
+            error_str = str(e).lower()
+            if "new_jobs" in error_str or "started_jobs" in error_str or "normalize" in error_str:
+                context.log.info("No new games to process (all games already ingested). Skipping.")
+                return {
+                    "status": "success",
+                    "load_id": None,
+                    "message": "No new games - all already ingested (incremental loading)",
+                }
+            raise
     except Exception as e:
         context.log.error(f"Boxscores ingestion failed: {e}")
         raise
@@ -267,6 +290,7 @@ def nba_boxscores(context, config: NBABoxscoreConfig) -> dict:
     group_name="nba_ingestion",
     description="Ingest team-level boxscore stats from completed games",
     deps=[nba_games],
+    automation_condition=AutomationCondition.eager(),  # Run when games update
 )
 def nba_team_boxscores(context, config: NBABoxscoreConfig) -> dict:
     """
@@ -287,18 +311,32 @@ def nba_team_boxscores(context, config: NBABoxscoreConfig) -> dict:
         )
         
         context.log.info(f"Starting team boxscores extraction (limit={config.limit})...")
-        load_info = pipeline.run([
-            nba_team_boxscores_resource(
-                limit=config.limit,
-                completed_only=config.completed_only,
-            )
-        ])
         
-        context.log.info(f"Team boxscores ingested: {load_info}")
-        return {
-            "status": "success",
-            "load_id": str(load_info.loads_ids[0]) if load_info.loads_ids else None,
-        }
+        # Handle case where incremental loading results in 0 games to process
+        resource = nba_team_boxscores_resource(
+            limit=config.limit,
+            completed_only=config.completed_only,
+        )
+        
+        try:
+            load_info = pipeline.run([resource])
+            context.log.info(f"Team boxscores ingested: {load_info}")
+            return {
+                "status": "success",
+                "load_id": str(load_info.loads_ids[0]) if load_info.loads_ids else None,
+            }
+        except FileNotFoundError as e:
+            # Handle dlt issue when resource yields no data (incremental loading skipped all games)
+            # dlt can't normalize empty resources and raises FileNotFoundError for missing normalize directories
+            error_str = str(e).lower()
+            if "new_jobs" in error_str or "started_jobs" in error_str or "normalize" in error_str:
+                context.log.info("No new games to process (all games already ingested). Skipping.")
+                return {
+                    "status": "success",
+                    "load_id": None,
+                    "message": "No new games - all already ingested (incremental loading)",
+                }
+            raise
     except Exception as e:
         context.log.error(f"Team boxscores ingestion failed: {e}")
         raise
@@ -308,6 +346,7 @@ def nba_team_boxscores(context, config: NBABoxscoreConfig) -> dict:
     group_name="nba_ingestion",
     compute_kind="python",
     description="NBA player injury data from ESPN (point-in-time snapshot)",
+    automation_condition=AutomationCondition.on_cron("@daily"),  # Daily refresh
 )
 def nba_injuries(context) -> dict:
     """

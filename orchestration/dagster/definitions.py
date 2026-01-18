@@ -7,6 +7,7 @@ This file loads asset definitions generated from ODCS contracts.
 from dagster import Definitions, load_assets_from_modules
 
 from assets import ingestion, transformation, quality
+from orchestration.dagster.schedules import schedules, jobs
 
 # Load assets from modules
 all_assets = load_assets_from_modules([ingestion, transformation, quality])
@@ -36,8 +37,15 @@ if hasattr(quality, 'baselinr_defs') and quality.baselinr_defs:
 # def postgres_resource(context):
 #     return psycopg2.connect(context.resource_config["conn_string"])
 
+# Declarative automation: Assets use automation_condition directly (on_cron, eager)
+# The default_automation_condition_sensor is auto-created by Dagster
+# Enable via CLI: dagster sensor start -f definitions.py default_automation_condition_sensor
+# Or via UI: Settings > Automation > Enable for code location
+
 defs = Definitions(
     assets=all_assets,
     resources=resources if resources else None,
+    jobs=jobs,  # Empty list - no jobs needed with declarative automation
+    schedules=schedules,  # Empty list - no schedules needed with declarative automation
 )
 

@@ -117,6 +117,82 @@ python scripts/db_query.py --counts features_dev
 python scripts/db_query.py "SELECT * FROM features_dev.game_features LIMIT 5"
 ```
 
+## Validation Commands
+
+**⚠️ IMPORTANT: Always validate changes to assets, jobs, or warehouse data using these commands.**
+
+### Quick Validation Workflow
+```bash
+# 1. Run asset/job via Dagster CLI (Docker)
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <asset_name>
+docker exec nba_analytics_dagster_webserver dagster job execute -f /app/definitions.py -j <job_name>
+
+# 2. Verify data loaded in warehouse
+python scripts/db_query.py --counts raw_dev
+python scripts/db_query.py "SELECT count(*) FROM raw_dev.<table_name>"
+python scripts/db_query.py "SELECT * FROM raw_dev.<table_name> LIMIT 5"
+
+# 3. Check execution status
+# Look for "RUN_SUCCESS" or "LOADED and contains no failed jobs" in output
+```
+
+### Validate After Specific Changes
+
+**New/Modified Asset:**
+```bash
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <asset_name>
+python scripts/db_query.py "SELECT count(*) FROM raw_dev.<table_name>"
+```
+
+**New/Modified Job:**
+```bash
+docker exec nba_analytics_dagster_webserver dagster job list -f /app/definitions.py
+docker exec nba_analytics_dagster_webserver dagster job execute -f /app/definitions.py -j <job_name>
+python scripts/db_query.py --counts raw_dev
+```
+
+**Schema/Table Changes:**
+```bash
+python scripts/db_query.py --schemas
+python scripts/db_query.py --tables raw_dev
+python scripts/db_query.py "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'raw_dev' AND table_name = '<table>'"
+```
+
+See `.cursorrules` for complete validation guidelines.
+
+## Declarative Automation
+
+**Assets use `AutomationCondition` instead of explicit jobs/schedules:**
+
+- **Daily refresh**: `automation_condition=AutomationCondition.on_cron("@daily")`
+  - `nba_teams`, `nba_players`, `nba_todays_games`, `nba_betting_odds`, `nba_injuries`
+- **Reactive (eager)**: `automation_condition=AutomationCondition.eager()`
+  - `nba_games` (runs after teams update), `nba_boxscores`, `nba_team_boxscores` (run after games update)
+
+### Enable Automation Sensor
+
+**The default automation sensor must be enabled to trigger automatic materialization:**
+
+```bash
+# List sensors (shows default_automation_condition_sensor [STOPPED] initially)
+docker exec nba_analytics_dagster_webserver dagster sensor list -f /app/definitions.py
+
+# Enable the automation sensor
+docker exec nba_analytics_dagster_webserver dagster sensor start -f /app/definitions.py default_automation_condition_sensor
+
+# Verify it's enabled (should show [RUNNING])
+docker exec nba_analytics_dagster_webserver dagster sensor list -f /app/definitions.py
+```
+
+**Or enable via UI:**
+- Go to http://localhost:3000
+- Settings → Automation → Toggle "default_automation_condition_sensor" ON
+
+**Once enabled:**
+- `on_cron` assets materialize daily on schedule
+- `eager` assets materialize automatically when upstream dependencies change
+- Assets run independently (no dlt pipeline state conflicts)
+
 ## Local Dagster CLI
 
 ### Environment Variables (PowerShell)
@@ -142,6 +218,12 @@ dagster asset materialize -f definitions.py --select nba_games
 dagster asset materialize -f definitions.py --select nba_players
 dagster asset materialize -f definitions.py --select nba_todays_games
 dagster asset materialize -f definitions.py --select nba_betting_odds
+
+# List jobs
+dagster job list -f definitions.py
+
+# Execute job
+dagster job execute -f definitions.py -j all_ingestion
 
 # Start dev server
 dagster dev -f definitions.py

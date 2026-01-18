@@ -20,13 +20,33 @@ Schemas are defined ONCE in `contracts/schemas/` and used by:
 ## Technology Stack
 | Component | Tool | Purpose |
 |-----------|------|---------|
-| Orchestration | Dagster | Job scheduling, asset management |
+| Orchestration | Dagster | Job scheduling, asset management (declarative automation) |
 | Ingestion | dlt | Data extraction and loading |
 | Storage | PostgreSQL | Primary data warehouse |
 | Transformation | SQLMesh | SQL-based transforms |
 | Quality | Baselinr | Data profiling, drift detection |
 | Dashboards | Metabase | BI and visualization |
 | Monitoring | Prometheus + Grafana | System metrics |
+
+## Dagster Orchestration: Declarative Automation
+
+**Assets use `AutomationCondition` instead of explicit jobs/schedules:**
+
+- **`on_cron("@daily")`**: Assets run on a schedule (daily refresh)
+  - `nba_teams`, `nba_players`, `nba_todays_games`, `nba_betting_odds`, `nba_injuries`
+  
+- **`eager()`**: Assets run reactively when upstream dependencies change
+  - `nba_games` (runs when `nba_teams` updates)
+  - `nba_boxscores`, `nba_team_boxscores` (run when `nba_games` updates)
+
+**Benefits:**
+- Assets run independently (no dlt pipeline state conflicts)
+- Automatic dependency management
+- Less boilerplate (no separate jobs/schedules)
+- Assets materialize exactly when needed
+
+**The `default_automation_condition_sensor` evaluates conditions and triggers materialization.**
+Enable via CLI: `dagster sensor start -f definitions.py default_automation_condition_sensor`
 
 ## Service Ports
 | Service | Port | URL |

@@ -14,7 +14,15 @@ from datetime import datetime
 import time
 import logging
 import sys
+import os
 from pathlib import Path
+
+# Optional database connection for incremental loading
+try:
+    import psycopg2
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
 
 # Add parent directories to path for contract loader
 _current_dir = Path(__file__).parent
@@ -84,6 +92,67 @@ def _get_contract_pk(contract_name: str):
         except Exception:
             pass
     return None
+
+
+def _get_existing_game_ids(table_name: str, schema_name: str = None) -> Set[str]:
+    """
+    Query database for existing game_ids to enable incremental loading.
+    
+    Returns set of game_ids that already exist in the database.
+    Returns empty set if query fails (e.g., table doesn't exist yet).
+    """
+    if not PSYCOPG2_AVAILABLE:
+        logger.warning("psycopg2 not available - cannot check existing games for incremental loading")
+        return set()
+    
+    try:
+        # Get connection from environment (same as db_query.py)
+        database = (
+            os.getenv("NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__DATABASE") or
+            os.getenv("POSTGRES_DB") or
+            "nba_analytics"
+        )
+        host = (
+            os.getenv("NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST") or
+            os.getenv("POSTGRES_HOST") or
+            "localhost"
+        )
+        port = int(os.getenv("POSTGRES_PORT", "5432"))
+        user = os.getenv("POSTGRES_USER", "postgres")
+        password = os.getenv("POSTGRES_PASSWORD", "postgres")
+        
+        # Determine schema (use DATA_ENV if available, default to raw_dev)
+        if schema_name is None:
+            data_env = os.getenv("DATA_ENV", "dev")
+            schema_name = f"raw_{data_env}"
+        
+        # Connect and query
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            database=database,
+            user=user,
+            password=password,
+        )
+        
+        cursor = conn.cursor()
+        
+        # Query distinct game_ids from the table
+        query = f"SELECT DISTINCT game_id FROM {schema_name}.{table_name}"
+        cursor.execute(query)
+        
+        existing_ids = {str(row[0]) for row in cursor.fetchall()}
+        
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"Found {len(existing_ids)} existing game_ids in {schema_name}.{table_name}")
+        return existing_ids
+        
+    except Exception as e:
+        # Table might not exist yet (first run) - this is OK
+        logger.debug(f"Could not query existing game_ids (this is OK on first run): {e}")
+        return set()
 
 # Note: NBA CDN endpoints and headers are imported from ingestion.dlt.config
 # See config.py for: NBA_CDN_SCHEDULE, NBA_CDN_SCOREBOARD, NBA_CDN_PLAYERS, 
@@ -529,6 +598,7 @@ def nba_boxscores_resource(
     fetch_from_schedule: bool = True,
     completed_only: bool = True,
     limit: Optional[int] = None,
+    skip_existing: bool = True,
 ) -> Iterator[Dict[str, Any]]:
     """
     Extract detailed boxscore data (player stats per game).
@@ -546,6 +616,7 @@ def nba_boxscores_resource(
         fetch_from_schedule: If True and game_ids is None, gets game IDs from schedule.
         completed_only: Only fetch boxscores for completed games (status=3).
         limit: Maximum number of games to process (for testing).
+        skip_existing: If True, skip games that already exist in database (incremental loading).
     """
     logger.info("Starting boxscores extraction from CDN...")
     
@@ -573,12 +644,23 @@ def nba_boxscores_resource(
                 if limit and len(games_to_process) >= limit:
                     break
             
-            logger.info(f"Found {len(games_to_process)} completed games to process")
+            logger.info(f"Found {len(games_to_process)} completed games in schedule")
         else:
             logger.warning("No game IDs provided and fetch_from_schedule is False")
             return
         
-        # Apply limit
+        # Apply incremental loading: filter out existing games
+        if skip_existing and games_to_process:
+            existing_game_ids = _get_existing_game_ids("boxscores")
+            initial_count = len(games_to_process)
+            games_to_process = [gid for gid in games_to_process if str(gid) not in existing_game_ids]
+            skipped_count = initial_count - len(games_to_process)
+            if skipped_count > 0:
+                logger.info(f"⏭️  Skipping {skipped_count} existing games (incremental loading). {len(games_to_process)} new games to fetch.")
+            else:
+                logger.info(f"✅ No existing games found. Will fetch all {len(games_to_process)} games.")
+        
+        # Apply limit (after filtering existing games)
         if limit:
             games_to_process = games_to_process[:limit]
         
@@ -667,6 +749,7 @@ def nba_team_boxscores_resource(
     fetch_from_schedule: bool = True,
     completed_only: bool = True,
     limit: Optional[int] = None,
+    skip_existing: bool = True,
 ) -> Iterator[Dict[str, Any]]:
     """
     Extract team-level boxscore data (team stats per game).
@@ -679,6 +762,7 @@ def nba_team_boxscores_resource(
         fetch_from_schedule: If True, gets game IDs from schedule.
         completed_only: Only fetch boxscores for completed games.
         limit: Maximum number of games to process.
+        skip_existing: If True, skip games that already exist in database (incremental loading).
     """
     logger.info("Starting team boxscores extraction from CDN...")
     
@@ -705,10 +789,22 @@ def nba_team_boxscores_resource(
                 if limit and len(games_to_process) >= limit:
                     break
             
-            logger.info(f"Found {len(games_to_process)} completed games to process")
+            logger.info(f"Found {len(games_to_process)} completed games in schedule")
         else:
             return
         
+        # Apply incremental loading: filter out existing games
+        if skip_existing and games_to_process:
+            existing_game_ids = _get_existing_game_ids("team_boxscores")
+            initial_count = len(games_to_process)
+            games_to_process = [gid for gid in games_to_process if str(gid) not in existing_game_ids]
+            skipped_count = initial_count - len(games_to_process)
+            if skipped_count > 0:
+                logger.info(f"⏭️  Skipping {skipped_count} existing games (incremental loading). {len(games_to_process)} new games to fetch.")
+            else:
+                logger.info(f"✅ No existing games found. Will fetch all {len(games_to_process)} games.")
+        
+        # Apply limit (after filtering existing games)
         if limit:
             games_to_process = games_to_process[:limit]
         
