@@ -294,3 +294,82 @@ contracts/schemas/           contracts/contracts/
 4. [ ] Add/update docstrings in code
 
 **Keep docs in sync with reality - outdated docs are worse than no docs.**
+
+---
+
+## 🗺️ Development Roadmap
+
+### ✅ Phase 1: ML Pipeline (Current Focus)
+
+**Status**: ML training and prediction assets created. Next: Validate and test.
+
+**Completed:**
+- ✅ Training asset (`train_game_winner_model`) - XGBoost model training
+- ✅ Prediction asset (`generate_game_predictions`) - Generate predictions for upcoming games
+- ✅ ML infrastructure - `ml_dev` schema with model_registry, predictions, betting_results tables
+
+**Next Immediate Steps:**
+1. [ ] Validate ML assets - Run training asset, verify model saved and registered in `ml_dev.model_registry`
+2. [ ] Test predictions - Generate predictions for upcoming games, verify stored in `ml_dev.predictions`
+3. [ ] Model evaluation - Track accuracy, compare predictions vs. actuals
+
+**Reference**: See `.cursor/docs/ml-features.md` for detailed ML feature documentation.
+
+### 🔮 Phase 2: Expand ML Pipeline (Future Enhancements)
+
+**Priority**: After Phase 1 validation is complete.
+
+**Multiple Models:**
+- [ ] **Spread prediction model** - Predict point spread outcomes (requires historical odds)
+- [ ] **Over/Under model** - Predict total points over/under (requires historical odds)
+- [ ] **Player prop models** - Individual player performance predictions
+
+**Model Evaluation & Comparison:**
+- [ ] **Model evaluation asset** - Compare predictions vs. actual outcomes, calculate metrics (accuracy, precision, recall, F1)
+- [ ] **A/B testing** - Compare different algorithms (XGBoost vs. Neural Networks vs. Logistic Regression)
+- [ ] **Feature importance analysis** - Understand which features drive predictions (SHAP values)
+- [ ] **Backtesting framework** - Historical performance simulation, P&L tracking
+
+**Advanced MLOps:**
+- [ ] **Hyperparameter tuning** - Automated optimization using Optuna/Hyperopt
+- [ ] **Model monitoring** - Track prediction drift, feature drift over time
+- [ ] **Automated retraining triggers** - Retrain when accuracy drops below threshold
+- [ ] **Model explainability** - SHAP values, feature contributions per prediction
+
+**Reference**: See `.cursor/docs/ml-features.md` section "Future ML Enhancements".
+
+### 📊 Phase 3: Data Quality Integration (After ML Pipeline)
+
+**Priority**: After ML pipeline is validated and running.
+
+**Baselinr Integration:**
+- [ ] **Regenerate Baselinr config** - Fix `configs/generated/baselinr/baselinr_config.yml`
+  - Update database name (`oss_data_platform` → `nba_analytics`)
+  - Update table references to `raw_dev.*` schemas (currently references wrong tables)
+  - Remove outdated `customer_orders` table references
+  - Add quality rules for NBA data (nullability, ranges, uniqueness)
+- [ ] **Wire quality assets** - Ensure `quality` assets load correctly in Dagster definitions
+- [ ] **Quality checks on features** - Monitor `features_dev.*` tables for drift, anomalies
+- [ ] **Quality checks on predictions** - Validate prediction confidence, feature completeness
+
+**Data Validation:**
+- [ ] **Schema validation** - Ensure features match training schema before model input
+- [ ] **Data freshness checks** - Alert when features are stale (games older than X days)
+- [ ] **Missing feature detection** - Identify games with incomplete features
+
+**Reference**: See `.cursor/docs/ml-features.md` section "Data Quality Integration".
+
+### 📋 Ongoing: Data Gaps (Free Sources Only)
+
+**Constraint**: All data sources must be FREE. No paid APIs.
+
+**Remaining Gaps:**
+- [ ] **Historical betting odds** - Building daily via `nba_betting_odds` asset (long-term accumulation)
+- [ ] **Advanced stats** - Calculate from existing data (Pace, OffRtg, DefRtg, eFG%, TS%) - add to SQLMesh transformations
+- [ ] **Rest/travel data** - Calculate from schedule (back-to-backs, travel distance) - add to feature engineering
+
+**Reference**: See `.cursor/docs/ml-features.md` section "Remaining Data Gaps".
+
+---
+
+**Note**: When starting work on any phase, check `.cursor/docs/ml-features.md` for current status and detailed requirements.

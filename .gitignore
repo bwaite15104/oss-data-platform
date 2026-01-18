@@ -76,6 +76,11 @@ orchestration/dagster/logs/
 .sqlmesh/
 transformation/sqlmesh/.cache/
 
+# ML Models (trained model files)
+models/
+*.pkl
+*.joblib
+
 # Airbyte
 ingestion/airbyte/.env
 

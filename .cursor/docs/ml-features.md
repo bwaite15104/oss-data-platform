@@ -210,11 +210,87 @@ ml_dev.predictions (live predictions)
 ml_dev.betting_results (P&L tracking)
 ```
 
-## Next Steps (Free Only)
-1. [ ] **Backfill all boxscores** - Increase limit to get all ~689 completed games
-2. [ ] **Start daily odds collection** - Schedule `nba_betting_odds` to run daily
-3. [ ] **Add injury scraper** - ESPN injury report scraper (free)
-4. [ ] **Build SQLMesh transformations** - Calculate advanced stats from existing data
-5. [ ] **Create feature store tables** - Rolling averages, rest days, etc.
-6. [ ] **Train baseline model** - Start with game winner prediction (no spread)
-7. [ ] **Add spread predictions later** - Once we have enough historical odds data
+## ML Pipeline Architecture
+
+**Training and Prediction pipelines are separated in Dagster:**
+
+```
+features_dev.game_features
+    ↓
+train_game_winner_model (Dagster asset, daily schedule)
+    ↓
+ml_dev.model_registry (stores model metadata)
+    ↓
+generate_game_predictions (Dagster asset, eager - runs when model updates)
+    ↓
+ml_dev.predictions (stores predictions for upcoming games)
+```
+
+### Current Implementation
+
+✅ **Training Asset**: `orchestration/dagster/assets/ml/training.py`
+- Asset: `train_game_winner_model`
+- Schedule: `AutomationCondition.on_cron("@daily")` - Retrain daily
+- Process: Loads features → Trains XGBoost → Saves model → Registers in `ml_dev.model_registry`
+
+✅ **Prediction Asset**: `orchestration/dagster/assets/ml/predictions.py`
+- Asset: `generate_game_predictions`
+- Schedule: `AutomationCondition.eager()` - Runs when model updates
+- Process: Loads latest model → Generates predictions → Stores in `ml_dev.predictions`
+
+## ✅ Completed Steps
+
+1. ✅ **Feature store created** - `features_dev.game_features` with 584 games
+2. ✅ **ML schema infrastructure** - `ml_dev.model_registry`, `ml_dev.predictions`, `ml_dev.betting_results`
+3. ✅ **Training pipeline** - Dagster asset for XGBoost model training
+4. ✅ **Prediction pipeline** - Dagster asset for generating predictions
+5. ✅ **Model versioning** - Automatic versioning and metadata tracking
+
+## 🚧 Next Immediate Steps (Phase 1: ML Pipeline)
+
+1. [ ] **Validate ML assets** - Run training asset, verify model saved and registered
+2. [ ] **Test predictions** - Generate predictions for upcoming games
+3. [ ] **Model evaluation** - Track accuracy over time, compare predictions vs. actuals
+4. [ ] **Feature expansion** - Add more features (rest days, advanced stats, head-to-head)
+
+## 🔮 Future ML Enhancements (Phase 2: Expand ML Pipeline)
+
+### Multiple Models
+- [ ] **Spread prediction model** - Predict point spread outcomes (requires historical odds)
+- [ ] **Over/Under model** - Predict total points over/under (requires historical odds)
+- [ ] **Player prop models** - Individual player performance predictions
+
+### Model Evaluation & Comparison
+- [ ] **Model evaluation asset** - Compare predictions vs. actual outcomes, calculate metrics
+- [ ] **A/B testing** - Compare different algorithms (XGBoost vs. Neural Networks vs. Logistic Regression)
+- [ ] **Feature importance analysis** - Understand which features drive predictions
+- [ ] **Backtesting framework** - Historical performance simulation
+
+### Advanced MLOps
+- [ ] **Hyperparameter tuning** - Automated optimization using Optuna/Hyperopt
+- [ ] **Model monitoring** - Track prediction drift, feature drift over time
+- [ ] **Automated retraining triggers** - Retrain when accuracy drops below threshold
+- [ ] **Model explainability** - SHAP values, feature contributions per prediction
+
+## 📊 Data Quality Integration (Phase 3: Quality Assurance)
+
+### Baselinr Integration
+- [ ] **Regenerate Baselinr config** - Update `configs/generated/baselinr/baselinr_config.yml` for NBA tables
+  - Fix database name (currently `oss_data_platform`, should be `nba_analytics`)
+  - Update table references to `raw_dev.*` schemas
+  - Remove outdated `customer_orders` table references
+  - Add quality rules for NBA data (nullability, ranges, uniqueness)
+- [ ] **Wire quality assets** - Ensure `quality` assets load correctly in Dagster
+- [ ] **Quality checks on features** - Monitor `features_dev.*` tables for drift
+- [ ] **Quality checks on predictions** - Validate prediction confidence, feature completeness
+
+### Data Validation
+- [ ] **Schema validation** - Ensure features match training schema
+- [ ] **Data freshness checks** - Alert when features are stale
+- [ ] **Missing feature detection** - Identify games with incomplete features
+
+## 📋 Remaining Data Gaps (Free Sources Only)
+
+1. [ ] **Historical betting odds** - Building daily via `nba_betting_odds` asset (long-term)
+2. [ ] **Advanced stats** - Calculate from existing data (Pace, OffRtg, DefRtg, eFG%, TS%)
+3. [ ] **Rest/travel data** - Calculate from schedule (back-to-backs, travel distance)

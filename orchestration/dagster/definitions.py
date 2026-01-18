@@ -6,11 +6,11 @@ This file loads asset definitions generated from ODCS contracts.
 
 from dagster import Definitions, load_assets_from_modules
 
-from assets import ingestion, transformation, quality
+from orchestration.dagster.assets import ingestion, transformation, quality, ml
 from orchestration.dagster.schedules import schedules, jobs
 
 # Load assets from modules
-all_assets = load_assets_from_modules([ingestion, transformation, quality])
+all_assets = load_assets_from_modules([ingestion, transformation, quality, ml])
 
 # Extract resources from Baselinr definitions if quality assets are loaded
 resources = {}
