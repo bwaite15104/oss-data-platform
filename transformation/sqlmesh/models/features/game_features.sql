@@ -27,7 +27,6 @@ SELECT
     home_rolling_5_rpg,
     home_rolling_5_fg_pct,
     home_rolling_5_fg3_pct,
-    home_wins_last_5,
     home_rolling_10_ppg,
     home_rolling_10_win_pct,
     
@@ -39,7 +38,6 @@ SELECT
     away_rolling_5_rpg,
     away_rolling_5_fg_pct,
     away_rolling_5_fg3_pct,
-    away_wins_last_5,
     away_rolling_10_ppg,
     away_rolling_10_win_pct,
     
@@ -63,6 +61,30 @@ SELECT
     -- Season differential
     season_win_pct_diff,
     season_point_diff_diff,
+    
+    -- Home team star player return features
+    home_star_players_returning,
+    home_key_players_returning,
+    home_extended_returns,
+    home_total_return_impact,
+    home_max_days_since_return,
+    home_avg_days_since_return,
+    home_has_star_return,
+    home_has_extended_return,
+    
+    -- Away team star player return features
+    away_star_players_returning,
+    away_key_players_returning,
+    away_extended_returns,
+    away_total_return_impact,
+    away_max_days_since_return,
+    away_avg_days_since_return,
+    away_has_star_return,
+    away_has_extended_return,
+    
+    -- Star return differential features
+    star_return_advantage,
+    return_impact_diff,
     
     CURRENT_TIMESTAMP as updated_at
     

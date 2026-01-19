@@ -40,10 +40,16 @@ Build ML models to predict NBA game outcomes for sports betting.
 
 | Table | Records | Description |
 |-------|---------|-------------|
-| `game_features` | **584** | ML training data with rolling averages |
+| `game_features` | **594** | ML training data with rolling averages + star player returns |
 | `team_features` | 31 | Season-level team stats |
 | `team_injury_features` | 29 | Injury impact by team |
 | `feature_registry` | 11 | Registered features metadata |
+
+**New Features (Jan 2026):**
+- **Star Player Return Features** (16 features):
+  - Detects when star players (20+ PPG) or key players (15-20 PPG) return after 7+ day absences
+  - Tracks extended returns (14+ days) with weighted impact scores
+  - Includes home/away counts, impact scores, days since return, and differential features
 
 ### ⚠️ Remaining Data Gaps
 

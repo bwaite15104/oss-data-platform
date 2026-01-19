@@ -1,0 +1,9 @@
+{
+  "ops": {
+    "generate_game_predictions": {
+      "config": {
+        "prediction_date_cutoff": "2026-01-18"
+      }
+    }
+  }
+}

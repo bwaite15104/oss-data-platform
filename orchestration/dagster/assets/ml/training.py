@@ -102,6 +102,21 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
                 home_season_win_pct,
                 away_season_win_pct,
                 season_win_pct_diff,
+                -- Star player return features
+                home_has_star_return,
+                home_star_players_returning,
+                home_key_players_returning,
+                home_extended_returns,
+                home_total_return_impact,
+                home_max_days_since_return,
+                away_has_star_return,
+                away_star_players_returning,
+                away_key_players_returning,
+                away_extended_returns,
+                away_total_return_impact,
+                away_max_days_since_return,
+                star_return_advantage,
+                return_impact_diff,
                 -- Target variable
                 home_win
             FROM features_dev.game_features
@@ -109,6 +124,7 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
               AND home_score IS NOT NULL
               AND away_score IS NOT NULL
               AND home_win IS NOT NULL
+              AND game_date::date < '2026-01-18'  -- Exclude 1/18 for prediction testing
             ORDER BY game_date
         """
         

@@ -109,8 +109,22 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         model_path = hyperparams.get('model_path')
         feature_cols = hyperparams.get('features', [])
         
-        if not model_path or not Path(model_path).exists():
-            raise FileNotFoundError(f"Model file not found: {model_path}")
+        # Handle both Docker (/app/models) and local paths
+        if model_path and Path(model_path).exists():
+            # Use stored path if it exists
+            pass
+        else:
+            # Try local models directory
+            local_model_path = project_root / "models" / f"game_winner_model_{model_version}.pkl"
+            if local_model_path.exists():
+                model_path = str(local_model_path)
+                context.log.info(f"Using local model path: {model_path}")
+            else:
+                raise FileNotFoundError(
+                    f"Model file not found. Tried:\n"
+                    f"  - Stored path: {hyperparams.get('model_path')}\n"
+                    f"  - Local path: {local_model_path}"
+                )
         
         context.log.info(f"Loading model {model_version} from {model_path}")
         
@@ -160,7 +174,22 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
                 -- Season-level features
                 home_season_win_pct,
                 away_season_win_pct,
-                season_win_pct_diff
+                season_win_pct_diff,
+                -- Star player return features
+                home_has_star_return,
+                home_star_players_returning,
+                home_key_players_returning,
+                home_extended_returns,
+                home_total_return_impact,
+                home_max_days_since_return,
+                away_has_star_return,
+                away_star_players_returning,
+                away_key_players_returning,
+                away_extended_returns,
+                away_total_return_impact,
+                away_max_days_since_return,
+                star_return_advantage,
+                return_impact_diff
             FROM features_dev.game_features
             WHERE (home_score IS NULL OR away_score IS NULL)
                OR {date_filter}
