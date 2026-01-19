@@ -167,6 +167,12 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         context.log.info(f"Training accuracy: {train_score:.4f}")
         context.log.info(f"Test accuracy: {test_score:.4f}")
         
+        # Extract feature importances (basic importance from XGBoost)
+        feature_importances = dict(zip(feature_cols, model.feature_importances_))
+        importance_sorted = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)
+        
+        context.log.info(f"Top 5 features: {[f[0] for f in importance_sorted[:5]]}")
+        
         # Generate model version
         model_version = config.model_version or f"v1.0.{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
@@ -219,6 +225,38 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         )
         
         model_id = cursor.fetchone()[0]
+        
+        # Ensure feature_importances table exists
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ml_dev.feature_importances (
+                importance_id SERIAL PRIMARY KEY,
+                model_id INTEGER NOT NULL,
+                feature_name VARCHAR(255) NOT NULL,
+                importance_score NUMERIC(10,6),
+                importance_rank INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (model_id) REFERENCES ml_dev.model_registry(model_id),
+                UNIQUE(model_id, feature_name)
+            )
+        """)
+        
+        # Store feature importances in dedicated table
+        cursor.execute("""
+            DELETE FROM ml_dev.feature_importances WHERE model_id = %s
+        """, (model_id,))
+        
+        for rank, (feature_name, importance) in enumerate(importance_sorted, start=1):
+            cursor.execute("""
+                INSERT INTO ml_dev.feature_importances (
+                    model_id, feature_name, importance_score, importance_rank, created_at
+                ) VALUES (%s, %s, %s, %s, %s)
+            """, (
+                model_id,
+                feature_name,
+                float(importance),
+                rank,
+                datetime.now(),
+            ))
         
         # Deactivate old models
         cursor.execute(

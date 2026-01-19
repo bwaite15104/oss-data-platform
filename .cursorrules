@@ -325,10 +325,10 @@ contracts/schemas/           contracts/contracts/
 - [ ] **Player prop models** - Individual player performance predictions
 
 **Model Evaluation & Comparison:**
-- [ ] **Model evaluation asset** - Compare predictions vs. actual outcomes, calculate metrics (accuracy, precision, recall, F1)
+- [x] **Model evaluation asset** - Compare predictions vs. actual outcomes, calculate metrics (accuracy, precision, recall, F1) ✅ COMPLETE
 - [ ] **A/B testing** - Compare different algorithms (XGBoost vs. Neural Networks vs. Logistic Regression)
 - [ ] **Feature importance analysis** - Understand which features drive predictions (SHAP values)
-- [ ] **Backtesting framework** - Historical performance simulation, P&L tracking
+- [x] **Backtesting framework** - Historical performance simulation, P&L tracking ✅ COMPLETE (via prediction_date_cutoff parameter)
 
 **Advanced MLOps:**
 - [ ] **Hyperparameter tuning** - Automated optimization using Optuna/Hyperopt
@@ -369,6 +369,30 @@ contracts/schemas/           contracts/contracts/
 - [ ] **Rest/travel data** - Calculate from schedule (back-to-backs, travel distance) - add to feature engineering
 
 **Reference**: See `.cursor/docs/ml-features.md` section "Remaining Data Gaps".
+
+### 📊 Phase 4: Observability & Dashboards
+
+**Priority**: After model evaluation is working. Provides visibility into model performance and data quality.
+
+**Metabase Dashboards:**
+- [ ] **Model Performance Dashboard** - Track accuracy, precision, recall, F1 over time
+- [ ] **Prediction Analysis Dashboard** - Predictions vs actuals, confidence distributions, upset analysis
+- [ ] **Feature Quality Dashboard** - Feature completeness, data freshness, missing values
+- [ ] **Data Ingestion Dashboard** - Ingestion status, row counts, last update times
+- [ ] **Betting Results Dashboard** - P&L tracking, win rates by confidence level, ROI analysis
+
+**Grafana Dashboards (if needed for real-time monitoring):**
+- [ ] **Real-time prediction metrics** - Live accuracy, prediction rate
+- [ ] **Data pipeline health** - Dagster run status, asset materialization times
+- [ ] **Database performance** - Query times, connection pool status
+
+**Setup Steps:**
+1. Connect Metabase to `nba_analytics` database (PostgreSQL)
+2. Create dashboards for key metrics from `ml_dev.model_evaluations`, `ml_dev.predictions`
+3. Set up scheduled reports/alerts for model performance degradation
+4. Document dashboard access and usage in `.cursor/docs/`
+
+**Reference**: Metabase available at http://localhost:3002, Grafana at http://localhost:3001
 
 ---
 

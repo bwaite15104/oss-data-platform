@@ -261,16 +261,33 @@ ml_dev.predictions (stores predictions for upcoming games)
 - [ ] **Player prop models** - Individual player performance predictions
 
 ### Model Evaluation & Comparison
-- [ ] **Model evaluation asset** - Compare predictions vs. actual outcomes, calculate metrics
+- [x] **Model evaluation asset** - Compare predictions vs. actual outcomes, calculate metrics ✅ COMPLETE
 - [ ] **A/B testing** - Compare different algorithms (XGBoost vs. Neural Networks vs. Logistic Regression)
-- [ ] **Feature importance analysis** - Understand which features drive predictions
-- [ ] **Backtesting framework** - Historical performance simulation
+- [ ] **Feature importance analysis** - Understand which features drive predictions (SHAP values)
+- [x] **Backtesting framework** - Historical performance simulation ✅ COMPLETE (via prediction_date_cutoff parameter)
 
 ### Advanced MLOps
 - [ ] **Hyperparameter tuning** - Automated optimization using Optuna/Hyperopt
 - [ ] **Model monitoring** - Track prediction drift, feature drift over time
 - [ ] **Automated retraining triggers** - Retrain when accuracy drops below threshold
 - [ ] **Model explainability** - SHAP values, feature contributions per prediction
+
+## 📊 Observability & Dashboards (Phase 4)
+
+### Metabase Dashboards
+- [ ] **Model Performance Dashboard** - Track accuracy, precision, recall, F1 over time from `ml_dev.model_evaluations`
+- [ ] **Prediction Analysis Dashboard** - Predictions vs actuals, confidence distributions, upset analysis
+- [ ] **Feature Quality Dashboard** - Feature completeness, data freshness, missing values
+- [ ] **Data Ingestion Dashboard** - Ingestion status, row counts, last update times
+- [ ] **Betting Results Dashboard** - P&L tracking, win rates by confidence level, ROI analysis
+
+### Setup
+1. Connect Metabase to `nba_analytics` database (PostgreSQL)
+2. Create dashboards for key metrics from `ml_dev.model_evaluations`, `ml_dev.predictions`
+3. Set up scheduled reports/alerts for model performance degradation
+4. Access: http://localhost:3002
+
+**Reference**: See `.cursorrules` Phase 4 section for detailed dashboard requirements.
 
 ## 📊 Data Quality Integration (Phase 3: Quality Assurance)
 

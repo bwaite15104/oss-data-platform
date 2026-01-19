@@ -91,11 +91,12 @@ BEGIN
         EXECUTE format('
             CREATE TABLE IF NOT EXISTS ml_%s.prediction_results (
                 result_id SERIAL PRIMARY KEY,
-                prediction_id INTEGER,
+                prediction_id INTEGER UNIQUE,
                 actual_value FLOAT,
                 is_correct BOOLEAN,
-                recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )', env);
+                recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (prediction_id) REFERENCES ml_%s.predictions(prediction_id)
+            )', env, env);
         
         EXECUTE format('
             CREATE TABLE IF NOT EXISTS ml_%s.betting_results (
@@ -106,6 +107,32 @@ BEGIN
                 profit_loss FLOAT,
                 recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )', env);
+        
+        EXECUTE format('
+            CREATE TABLE IF NOT EXISTS ml_%s.feature_importances (
+                importance_id SERIAL PRIMARY KEY,
+                model_id INTEGER NOT NULL,
+                feature_name VARCHAR(255) NOT NULL,
+                importance_score NUMERIC(10,6),
+                importance_rank INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (model_id) REFERENCES ml_%s.model_registry(model_id),
+                UNIQUE(model_id, feature_name)
+            )', env, env);
+        
+        EXECUTE format('
+            CREATE TABLE IF NOT EXISTS ml_%s.feature_shap_values (
+                shap_id SERIAL PRIMARY KEY,
+                model_id INTEGER NOT NULL,
+                game_id VARCHAR(50),
+                feature_name VARCHAR(255) NOT NULL,
+                shap_value NUMERIC(10,6),
+                base_value NUMERIC(10,6),
+                prediction_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (model_id) REFERENCES ml_%s.model_registry(model_id),
+                FOREIGN KEY (prediction_id) REFERENCES ml_%s.predictions(prediction_id)
+            )', env, env, env);
     END LOOP;
 END $$;
 
