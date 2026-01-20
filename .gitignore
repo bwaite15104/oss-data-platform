@@ -84,3 +84,23 @@ models/
 # Airbyte
 ingestion/airbyte/.env
 
+# Data files (downloaded/generated - can be regenerated)
+data/kaggle/
+data/kaggle_eval/
+*.csv
+*.zip
+
+# Temporary/debug scripts
+scripts/debug_*.py
+scripts/test_*.py
+scripts/inspect_*.py
+scripts/check_*.py
+scripts/setup_*.ps1
+scripts/setup_*.sh
+scripts/run_*.py
+
+# Cursor docs (temporary notes)
+.cursor/docs/
+
+# Chrome driver
+chromedriver.zip

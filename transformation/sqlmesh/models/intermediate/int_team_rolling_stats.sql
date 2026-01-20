@@ -1,7 +1,7 @@
 MODEL (
     name intermediate.int_team_rolling_stats,
-    kind VIEW,
-    description 'Team rolling statistics (last 5 and 10 games)'
+    kind FULL,
+    description 'Team rolling statistics (last 5 and 10 games) - materialized for performance'
 );
 
 -- Calculate rolling averages per team per game

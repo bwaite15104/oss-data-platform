@@ -1,7 +1,7 @@
 MODEL (
     name intermediate.int_team_season_stats,
-    kind VIEW,
-    description 'Team season aggregated statistics'
+    kind FULL,
+    description 'Team season aggregated statistics - materialized for performance'
 );
 
 -- Team season-level statistics aggregated from team boxscores

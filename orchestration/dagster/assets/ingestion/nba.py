@@ -32,6 +32,13 @@ from ingestion.dlt.pipelines.nba_stats import (
 from ingestion.dlt.pipelines.nba_injuries import nba_injuries_resource
 from ingestion.dlt.config import DATASET_NAME, PIPELINE_NAME, DESTINATION
 
+# Optional: Import historical backfill (only if needed)
+try:
+    from ingestion.dlt.pipelines.nba_historical_backfill import nba_historical_backfill
+    HISTORICAL_BACKFILL_AVAILABLE = True
+except ImportError:
+    HISTORICAL_BACKFILL_AVAILABLE = False
+
 
 class NBAIngestionConfig(Config):
     """Configuration for NBA data ingestion."""
@@ -61,11 +68,23 @@ def nba_teams(context, config: NBAIngestionConfig) -> dict:
         # Create dlt pipeline
         # Credentials are provided via environment variables
         # Dataset name is environment-aware (raw_dev, raw_staging, raw_prod)
-        pipeline = dlt.pipeline(
-            pipeline_name=PIPELINE_NAME,
-            destination=DESTINATION,
-            dataset_name=DATASET_NAME,
-        )
+        try:
+            pipeline = dlt.pipeline(
+                pipeline_name=PIPELINE_NAME,
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        except OSError as e:
+            # Handle case where pipeline state directory already exists (concurrent execution)
+            if "File exists" in str(e) or e.errno == 17:
+                context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+                pipeline = dlt.pipeline(
+                    pipeline_name=PIPELINE_NAME,
+                    destination=DESTINATION,
+                    dataset_name=DATASET_NAME,
+                )
+            else:
+                raise
         
         context.log.info("Starting NBA teams extraction from CDN...")
         load_info = pipeline.run([nba_teams_resource()])
@@ -93,11 +112,23 @@ def nba_players(context, config: NBAIngestionConfig) -> dict:
     For a complete player roster, you would need to use a third-party API.
     """
     try:
-        pipeline = dlt.pipeline(
-            pipeline_name=PIPELINE_NAME,
-            destination=DESTINATION,
-            dataset_name=DATASET_NAME,
-        )
+        # Create dlt pipeline - handle case where pipeline state directory already exists
+        try:
+            pipeline = dlt.pipeline(
+                pipeline_name=PIPELINE_NAME,
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        except OSError as e:
+            if "File exists" in str(e) or e.errno == 17:
+                context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+                pipeline = dlt.pipeline(
+                    pipeline_name=PIPELINE_NAME,
+                    destination=DESTINATION,
+                    dataset_name=DATASET_NAME,
+                )
+            else:
+                raise
         
         context.log.info(f"Starting NBA players extraction to {DATASET_NAME}...")
         load_info = pipeline.run([nba_players_resource(season=config.season)])
@@ -127,11 +158,23 @@ def nba_games(context, config: NBAIngestionConfig) -> dict:
     This includes ~1,300+ games for a full season.
     """
     try:
-        pipeline = dlt.pipeline(
-            pipeline_name=PIPELINE_NAME,
-            destination=DESTINATION,
-            dataset_name=DATASET_NAME,
-        )
+        # Create dlt pipeline - handle case where pipeline state directory already exists
+        try:
+            pipeline = dlt.pipeline(
+                pipeline_name=PIPELINE_NAME,
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        except OSError as e:
+            if "File exists" in str(e) or e.errno == 17:
+                context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+                pipeline = dlt.pipeline(
+                    pipeline_name=PIPELINE_NAME,
+                    destination=DESTINATION,
+                    dataset_name=DATASET_NAME,
+                )
+            else:
+                raise
         
         limit_msg = f" (limited to {config.games_limit})" if config.games_limit else ""
         context.log.info(f"Starting NBA games extraction from CDN{limit_msg}...")
@@ -168,11 +211,23 @@ def nba_todays_games(context) -> dict:
     - Period and game clock
     """
     try:
-        pipeline = dlt.pipeline(
-            pipeline_name=PIPELINE_NAME,
-            destination=DESTINATION,
-            dataset_name=DATASET_NAME,
-        )
+        # Create dlt pipeline - handle case where pipeline state directory already exists
+        try:
+            pipeline = dlt.pipeline(
+                pipeline_name=PIPELINE_NAME,
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        except OSError as e:
+            if "File exists" in str(e) or e.errno == 17:
+                context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+                pipeline = dlt.pipeline(
+                    pipeline_name=PIPELINE_NAME,
+                    destination=DESTINATION,
+                    dataset_name=DATASET_NAME,
+                )
+            else:
+                raise
         
         context.log.info("Starting today's NBA games extraction from CDN...")
         load_info = pipeline.run([nba_todays_games_resource()])
@@ -204,11 +259,23 @@ def nba_betting_odds(context) -> dict:
     CRITICAL for ML betting prediction models!
     """
     try:
-        pipeline = dlt.pipeline(
-            pipeline_name=PIPELINE_NAME,
-            destination=DESTINATION,
-            dataset_name=DATASET_NAME,
-        )
+        # Create dlt pipeline - handle case where pipeline state directory already exists
+        try:
+            pipeline = dlt.pipeline(
+                pipeline_name=PIPELINE_NAME,
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        except OSError as e:
+            if "File exists" in str(e) or e.errno == 17:
+                context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+                pipeline = dlt.pipeline(
+                    pipeline_name=PIPELINE_NAME,
+                    destination=DESTINATION,
+                    dataset_name=DATASET_NAME,
+                )
+            else:
+                raise
         
         context.log.info("Starting betting odds extraction from CDN...")
         load_info = pipeline.run([nba_betting_odds_resource()])
@@ -245,11 +312,23 @@ def nba_boxscores(context, config: NBABoxscoreConfig) -> dict:
     Use 'limit' config to control how many games to process.
     """
     try:
-        pipeline = dlt.pipeline(
-            pipeline_name=PIPELINE_NAME,
-            destination=DESTINATION,
-            dataset_name=DATASET_NAME,
-        )
+        # Create dlt pipeline - handle case where pipeline state directory already exists
+        try:
+            pipeline = dlt.pipeline(
+                pipeline_name=PIPELINE_NAME,
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        except OSError as e:
+            if "File exists" in str(e) or e.errno == 17:
+                context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+                pipeline = dlt.pipeline(
+                    pipeline_name=PIPELINE_NAME,
+                    destination=DESTINATION,
+                    dataset_name=DATASET_NAME,
+                )
+            else:
+                raise
         
         context.log.info(f"Starting boxscores extraction (limit={config.limit})...")
         
@@ -304,11 +383,27 @@ def nba_team_boxscores(context, config: NBABoxscoreConfig) -> dict:
     Useful for team-based ML prediction models!
     """
     try:
-        pipeline = dlt.pipeline(
-            pipeline_name=PIPELINE_NAME,
-            destination=DESTINATION,
-            dataset_name=DATASET_NAME,
-        )
+        # Create dlt pipeline - handle case where pipeline state directory already exists
+        # This can happen when multiple runs execute concurrently or directory wasn't cleaned up
+        try:
+            pipeline = dlt.pipeline(
+                pipeline_name=PIPELINE_NAME,
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        except OSError as e:
+            # Handle case where pipeline state directory already exists
+            # This can happen in concurrent executions or if cleanup didn't happen
+            if "File exists" in str(e) or e.errno == 17:
+                context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+                # Try to create pipeline with existing state
+                pipeline = dlt.pipeline(
+                    pipeline_name=PIPELINE_NAME,
+                    destination=DESTINATION,
+                    dataset_name=DATASET_NAME,
+                )
+            else:
+                raise
         
         context.log.info(f"Starting team boxscores extraction (limit={config.limit})...")
         
@@ -337,6 +432,22 @@ def nba_team_boxscores(context, config: NBABoxscoreConfig) -> dict:
                     "message": "No new games - all already ingested (incremental loading)",
                 }
             raise
+        except OSError as e:
+            # Handle concurrent directory creation issues
+            if "File exists" in str(e) or e.errno == 17:
+                context.log.warning(f"Concurrent execution detected (directory already exists), retrying: {e}")
+                # Retry the pipeline run - dlt should handle existing state
+                try:
+                    load_info = pipeline.run([resource])
+                    context.log.info(f"Team boxscores ingested (after retry): {load_info}")
+                    return {
+                        "status": "success",
+                        "load_id": str(load_info.loads_ids[0]) if load_info.loads_ids else None,
+                    }
+                except Exception as retry_error:
+                    context.log.error(f"Retry also failed: {retry_error}")
+                    raise
+            raise
     except Exception as e:
         context.log.error(f"Team boxscores ingestion failed: {e}")
         raise
@@ -356,11 +467,23 @@ def nba_injuries(context) -> dict:
     """
     context.log.info("Starting injuries extraction from ESPN...")
     
-    pipeline = dlt.pipeline(
-        pipeline_name=PIPELINE_NAME,
-        destination=DESTINATION,
-        dataset_name=DATASET_NAME,
-    )
+    # Create dlt pipeline - handle case where pipeline state directory already exists
+    try:
+        pipeline = dlt.pipeline(
+            pipeline_name=PIPELINE_NAME,
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
+        )
+    except OSError as e:
+        if "File exists" in str(e) or e.errno == 17:
+            context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+            pipeline = dlt.pipeline(
+                pipeline_name=PIPELINE_NAME,
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        else:
+            raise
     
     try:
         load_info = pipeline.run([nba_injuries_resource()])
@@ -372,4 +495,89 @@ def nba_injuries(context) -> dict:
         }
     except Exception as e:
         context.log.error(f"Injuries ingestion failed: {e}")
+        raise
+
+
+class HistoricalBackfillConfig(Config):
+    """Configuration for historical data backfill."""
+    season: str = Field(description="NBA season to backfill (e.g., '2023-24')")
+    team: Optional[str] = Field(default=None, description="Optional: specific team abbreviation (e.g., 'LAL') or None for all teams")
+    limit: Optional[int] = Field(default=None, description="Optional: limit number of games (for testing)")
+
+
+@asset(
+    group_name="nba_ingestion",
+    compute_kind="python",
+    description="Backfill historical NBA boxscores from Basketball Reference (free source)",
+    # No automation_condition - this is manual/occasional use only
+)
+def nba_historical_backfill(context, config: HistoricalBackfillConfig) -> dict:
+    """
+    Backfill historical NBA boxscores from Basketball Reference.
+    
+    This is for occasional use to backfill past seasons (e.g., 2023-24, 2022-23)
+    to get more training data for star player return features.
+    
+    Uses basketball-reference-scraper (free, open-source).
+    Automatically converts Basketball Reference format to our schema.
+    
+    Note: This can take a long time (30 teams × ~82 games × 2 seconds = ~1.5 hours per season).
+    Consider using 'team' and 'limit' config for testing first.
+    
+    Args:
+        season: NBA season (e.g., "2023-24")
+        team: Optional team abbreviation (e.g., "LAL") - if None, processes all teams
+        limit: Optional limit on number of games (for testing)
+    """
+    if not HISTORICAL_BACKFILL_AVAILABLE:
+        raise ImportError(
+            "basketball-reference-scraper not available. "
+            "Install with: pip install basketball-reference-scraper"
+        )
+    
+    context.log.info(f"Starting historical backfill for season {config.season}...")
+    if config.team:
+        context.log.info(f"Processing team: {config.team}")
+    if config.limit:
+        context.log.info(f"Limit: {config.limit} games")
+    
+    # Create dlt pipeline - handle case where pipeline state directory already exists
+    try:
+        pipeline = dlt.pipeline(
+            pipeline_name="nba_historical_backfill",
+            destination=DESTINATION,
+            dataset_name=DATASET_NAME,
+        )
+    except OSError as e:
+        if "File exists" in str(e) or e.errno == 17:
+            context.log.warning(f"Pipeline state directory already exists, reusing: {e}")
+            pipeline = dlt.pipeline(
+                pipeline_name="nba_historical_backfill",
+                destination=DESTINATION,
+                dataset_name=DATASET_NAME,
+            )
+        else:
+            raise
+    
+    try:
+        from ingestion.dlt.pipelines.nba_historical_backfill import nba_historical_backfill as historical_backfill_source
+        
+        load_info = pipeline.run(
+            historical_backfill_source(
+                season=config.season,
+                team=config.team,
+                skip_existing=True,  # Always skip existing games
+                limit=config.limit,
+            )
+        )
+        
+        context.log.info(f"Historical backfill complete: {load_info}")
+        return {
+            "status": "success",
+            "season": config.season,
+            "team": config.team,
+            "load_id": str(load_info.loads_ids[0]) if load_info.loads_ids else None,
+        }
+    except Exception as e:
+        context.log.error(f"Historical backfill failed: {e}")
         raise

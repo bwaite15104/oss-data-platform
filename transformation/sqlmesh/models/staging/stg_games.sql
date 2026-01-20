@@ -32,10 +32,11 @@ SELECT
     -- Determine winner
     winner_team_id::INTEGER as winner_team_id,
     
-    -- Is overtime (check status text)
-    game_status LIKE '%OT%' as is_overtime,
+    -- Is overtime (check status text or if scores exist)
+    COALESCE(game_status LIKE '%OT%', false) as is_overtime,
     
-    -- Is completed
-    game_status IN ('Final', 'Final/OT', 'Final/OT2') as is_completed
+    -- Is completed: either has status indicating completion OR has scores (for historical data)
+    (game_status IN ('Final', 'Final/OT', 'Final/OT2') 
+     OR (home_score IS NOT NULL AND away_score IS NOT NULL)) as is_completed
     
 FROM raw_dev.games
