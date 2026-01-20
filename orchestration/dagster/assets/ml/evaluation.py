@@ -18,8 +18,9 @@ else:
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Import prediction asset for dependency reference
+# Import prediction and transformation assets for dependency references
 from .predictions import generate_game_predictions
+from orchestration.dagster.assets.transformation import game_features
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,8 @@ class ModelEvaluationConfig(Config):
 @asset(
     group_name="ml_pipeline",
     description="Evaluate model performance by comparing predictions vs actual outcomes",
-    deps=[generate_game_predictions],  # Depends on predictions
-    automation_condition=AutomationCondition.eager(),  # Run when predictions update
+    deps=[generate_game_predictions, game_features],  # Depend on predictions and updated game results
+    automation_condition=AutomationCondition.eager(),  # Run when predictions update OR when new game results available
 )
 def evaluate_model_performance(context, config: ModelEvaluationConfig) -> dict:
     """

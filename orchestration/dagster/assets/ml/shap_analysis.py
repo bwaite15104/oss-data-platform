@@ -34,7 +34,7 @@ class SHAPAnalysisConfig(Config):
     group_name="ml_pipeline",
     description="Compute SHAP values for model interpretability and feature contribution analysis",
     deps=[train_game_winner_model],  # Depends on training
-    automation_condition=AutomationCondition.eager(),  # Run when model updates (optional - can be on_cron for periodic analysis)
+    automation_condition=AutomationCondition.on_cron("@weekly"),  # Weekly SHAP analysis (computationally expensive, less frequent)
 )
 def analyze_feature_importance_shap(context, config: SHAPAnalysisConfig) -> dict:
     """

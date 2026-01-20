@@ -17,6 +17,9 @@ else:
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+# Import transformation asset for dependency
+from orchestration.dagster.assets.transformation import game_features
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +35,8 @@ class ModelTrainingConfig(Config):
 @asset(
     group_name="ml_pipeline",
     description="Train XGBoost model for game winner prediction",
-    automation_condition=AutomationCondition.on_cron("@daily"),  # Daily retrain
+    deps=[game_features],  # Depend on game features being ready
+    automation_condition=AutomationCondition.on_cron("@daily"),  # Daily retrain (can be adjusted to weekly/monthly)
 )
 def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
     """
