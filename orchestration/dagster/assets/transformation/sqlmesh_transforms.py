@@ -49,6 +49,8 @@ class SQLMeshConfig(BaseModel):
     gateway: str = "local"
     auto_apply: bool = True
     select_model: Optional[str] = None  # If set, only process specific model
+    backfill: bool = False  # If True, use backfill command to force rematerialization
+    backfill_start_date: str = "2010-10-01"  # Start date for backfill (YYYY-MM-DD)
 
 
 def get_postgres_connection() -> psycopg2.extensions.connection:
@@ -173,6 +175,11 @@ def execute_sqlmesh_plan_for_model(
         config.gateway,  # Environment/gateway as positional argument (e.g., "local", "prod")
         "--select-model", model_name,
     ]
+    
+    # Add backfill options if requested (forces rematerialization)
+    if config.backfill:
+        cmd.extend(["--backfill", "--start", config.backfill_start_date])
+        context.log.info(f"Using backfill mode with start date: {config.backfill_start_date}")
     
     if config.auto_apply:
         cmd.append("--auto-apply")

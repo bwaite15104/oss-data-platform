@@ -84,7 +84,7 @@ def _parse_injury_status(status_text: str) -> str:
 
 @dlt.resource(
     name="injuries",
-    write_disposition="replace",  # Replace all injuries each time (point-in-time snapshot)
+    write_disposition="append",  # Append mode (incremental) - duplicates handled by primary key constraint
     primary_key="injury_id",
 )
 def nba_injuries_resource() -> Iterator[Dict[str, Any]]:

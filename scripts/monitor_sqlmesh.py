@@ -8,6 +8,7 @@ Provides real-time visibility into:
 - Table creation status
 """
 
+import os
 import psycopg2
 import time
 import sys

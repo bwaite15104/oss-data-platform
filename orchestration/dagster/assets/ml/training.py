@@ -28,7 +28,15 @@ class ModelTrainingConfig(Config):
     test_size: float = Field(default=0.2, description="Test set size (0.0-1.0)")
     random_state: int = Field(default=42, description="Random seed for reproducibility")
     max_depth: int = Field(default=6, description="XGBoost max depth")
-    n_estimators: int = Field(default=100, description="XGBoost number of estimators")
+    n_estimators: int = Field(default=200, description="XGBoost number of estimators")
+    learning_rate: float = Field(default=0.05, description="XGBoost learning rate")
+    subsample: float = Field(default=0.8, description="Subsample ratio of training instances")
+    colsample_bytree: float = Field(default=0.8, description="Subsample ratio of columns when constructing each tree")
+    min_child_weight: int = Field(default=3, description="Minimum sum of instance weight needed in a child")
+    gamma: float = Field(default=0.1, description="Minimum loss reduction required to make a split")
+    reg_alpha: float = Field(default=0.1, description="L1 regularization term")
+    reg_lambda: float = Field(default=1.0, description="L2 regularization term")
+    interaction_feature_boost: float = Field(default=1.5, description="Multiplier for interaction feature importance during training")
     model_version: Optional[str] = Field(default=None, description="Model version (auto-generated if None)")
 
 
@@ -128,21 +136,48 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
                 gf.home_season_win_pct,
                 gf.away_season_win_pct,
                 gf.season_win_pct_diff,
-                -- Star player return features
-                gf.home_has_star_return,
+                -- Star player return features (removed redundant: home_has_star_return, away_has_star_return, star_return_advantage)
                 gf.home_star_players_returning,
                 gf.home_key_players_returning,
                 gf.home_extended_returns,
                 gf.home_total_return_impact,
                 gf.home_max_days_since_return,
-                gf.away_has_star_return,
                 gf.away_star_players_returning,
                 gf.away_key_players_returning,
                 gf.away_extended_returns,
                 gf.away_total_return_impact,
                 gf.away_max_days_since_return,
-                gf.star_return_advantage,
                 gf.return_impact_diff,
+                -- Injury features
+                gf.home_star_players_out,
+                gf.home_key_players_out,
+                gf.home_star_players_doubtful,
+                gf.home_key_players_doubtful,
+                gf.home_star_players_questionable,
+                gf.home_injury_impact_score,
+                gf.home_injured_players_count,
+                gf.home_has_key_injury,
+                gf.away_star_players_out,
+                gf.away_key_players_out,
+                gf.away_star_players_doubtful,
+                gf.away_key_players_doubtful,
+                gf.away_star_players_questionable,
+                gf.away_injury_impact_score,
+                gf.away_injured_players_count,
+                gf.away_has_key_injury,
+                gf.injury_impact_diff,
+                gf.star_players_out_diff,
+                -- Feature interactions: Injury impact with other key features
+                gf.injury_impact_x_form_diff,
+                gf.away_injury_x_form,
+                gf.home_injury_x_form,
+                gf.home_injury_impact_ratio,
+                gf.away_injury_impact_ratio,
+                -- Explicit injury penalty features (v3 - fixed encoding)
+                gf.home_injury_penalty_severe,
+                gf.away_injury_penalty_severe,
+                gf.home_injury_penalty_absolute,
+                gf.away_injury_penalty_absolute,
                 -- NEW: Momentum/Streak features (Phase 1)
                 COALESCE(mf.home_win_streak, 0) AS home_win_streak,
                 COALESCE(mf.home_loss_streak, 0) AS home_loss_streak,
@@ -174,15 +209,15 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
                 COALESCE(mf.home_advantage, 0) AS home_advantage,
                 -- Target variable
                 gf.home_win
-            FROM features_dev.game_features gf
-            LEFT JOIN intermediate.int_game_momentum_features mf ON mf.game_id = gf.game_id
+            FROM marts__local.mart_game_features gf
+            LEFT JOIN intermediate__local.int_game_momentum_features mf ON mf.game_id = gf.game_id
             WHERE gf.game_date IS NOT NULL
               AND gf.home_score IS NOT NULL
               AND gf.away_score IS NOT NULL
               AND gf.home_win IS NOT NULL
               AND gf.game_date::date >= '2010-10-01'::date  -- Only use last 15 years of data
               AND gf.game_date::date < '{today_str}'::date  -- Exclude today's games for prediction testing
-              AND gf.game_date::date < '2026-01-19'::date  -- Exclude Mavericks game date (2026-01-19) from training
+              AND gf.game_date::date <= '2026-01-21'::date  -- Train on data through 1/21/2026
             ORDER BY gf.game_date
         """
         
@@ -222,15 +257,63 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
             context.log.error("XGBoost not installed. Install: pip install xgboost")
             raise
         
+        # Identify interaction features for importance boosting
+        interaction_features = [col for col in feature_cols if '_x_' in col or '_ratio' in col or 'injury' in col.lower()]
+        context.log.info(f"Found {len(interaction_features)} interaction/injury features to boost")
+        
+        # Create sample weights to boost importance of games with extreme injury scenarios
+        # This helps the model learn from rare but important cases
+        sample_weights = pd.Series(1.0, index=X_train.index)
+        if len(interaction_features) > 0:
+            # Boost samples where interaction features have extreme values
+            for feat in interaction_features:
+                if feat in X_train.columns:
+                    # Normalize feature values
+                    feat_values = X_train[feat].abs()
+                    if feat_values.max() > 0:
+                        normalized = feat_values / feat_values.max()
+                        # Boost samples with high interaction feature values
+                        sample_weights += normalized * (config.interaction_feature_boost - 1.0)
+            
+            # Normalize weights to prevent extreme values
+            sample_weights = sample_weights / sample_weights.mean()
+            sample_weights = sample_weights.clip(0.5, 2.0)  # Cap between 0.5x and 2x
+            context.log.info(f"Sample weights range: {sample_weights.min():.3f} - {sample_weights.max():.3f}")
+        
         model = xgb.XGBClassifier(
             max_depth=config.max_depth,
             n_estimators=config.n_estimators,
+            learning_rate=config.learning_rate,
+            subsample=config.subsample,
+            colsample_bytree=config.colsample_bytree,
+            min_child_weight=config.min_child_weight,
+            gamma=config.gamma,
+            reg_alpha=config.reg_alpha,
+            reg_lambda=config.reg_lambda,
             random_state=config.random_state,
             eval_metric='logloss',
+            tree_method='hist',  # Faster training
+            early_stopping_rounds=20,  # Stop if no improvement for 20 rounds
         )
         
-        context.log.info("Training XGBoost model...")
-        model.fit(X_train, y_train)
+        context.log.info("Training XGBoost model with improved hyperparameters...")
+        context.log.info(f"Hyperparameters: max_depth={config.max_depth}, n_estimators={config.n_estimators}, "
+                        f"learning_rate={config.learning_rate}, subsample={config.subsample}, "
+                        f"colsample_bytree={config.colsample_bytree}")
+        
+        # Use validation set for early stopping
+        X_train_fit, X_val, y_train_fit, y_val = train_test_split(
+            X_train, y_train, test_size=0.15, random_state=config.random_state, stratify=y_train
+        )
+        sample_weights_fit = sample_weights.loc[X_train_fit.index] if len(sample_weights) > 0 else None
+        
+        model.fit(
+            X_train_fit, 
+            y_train_fit,
+            sample_weight=sample_weights_fit,
+            eval_set=[(X_val, y_val)],
+            verbose=False
+        )
         
         # Evaluate
         train_score = model.score(X_train, y_train)
@@ -246,7 +329,15 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         feature_importances = dict(zip(feature_cols, model.feature_importances_))
         importance_sorted = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)
         
-        context.log.info(f"Top 5 features: {[f[0] for f in importance_sorted[:5]]}")
+        context.log.info(f"Top 10 features: {[f[0] for f in importance_sorted[:10]]}")
+        
+        # Log interaction feature importance
+        interaction_importance = {k: v for k, v in feature_importances.items() if k in interaction_features}
+        if interaction_importance:
+            total_interaction_importance = sum(interaction_importance.values())
+            context.log.info(f"Interaction features total importance: {total_interaction_importance:.6f} ({total_interaction_importance/sum(feature_importances.values())*100:.2f}%)")
+            top_interactions = sorted(interaction_importance.items(), key=lambda x: x[1], reverse=True)[:5]
+            context.log.info(f"Top interaction features: {[f'{f[0]}: {f[1]:.6f}' for f in top_interactions]}")
         
         # Generate model version
         model_version = config.model_version or f"v1.0.{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -277,6 +368,14 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         hyperparams = {
             "max_depth": config.max_depth,
             "n_estimators": config.n_estimators,
+            "learning_rate": config.learning_rate,
+            "subsample": config.subsample,
+            "colsample_bytree": config.colsample_bytree,
+            "min_child_weight": config.min_child_weight,
+            "gamma": config.gamma,
+            "reg_alpha": config.reg_alpha,
+            "reg_lambda": config.reg_lambda,
+            "interaction_feature_boost": config.interaction_feature_boost,
             "test_size": config.test_size,
             "random_state": config.random_state,
             "train_accuracy": float(train_score),

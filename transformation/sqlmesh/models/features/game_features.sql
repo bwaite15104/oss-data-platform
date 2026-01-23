@@ -1,7 +1,7 @@
 MODEL (
     name features_dev.game_features,
     kind FULL,
-    description 'ML-ready game features for prediction models - updated with 15 years of historical data',
+    description 'ML-ready game features for prediction models - updated with 15 years of historical data and feature interactions (injury x form, injury impact ratios)',
     grain game_id
 );
 
@@ -85,6 +85,39 @@ SELECT
     -- Star return differential features
     star_return_advantage,
     return_impact_diff,
+    
+    -- Injury features
+    home_star_players_out,
+    home_key_players_out,
+    home_star_players_doubtful,
+    home_key_players_doubtful,
+    home_star_players_questionable,
+    home_injury_impact_score,
+    home_injured_players_count,
+    home_has_key_injury,
+    away_star_players_out,
+    away_key_players_out,
+    away_star_players_doubtful,
+    away_key_players_doubtful,
+    away_star_players_questionable,
+    away_injury_impact_score,
+    away_injured_players_count,
+    away_has_key_injury,
+    injury_impact_diff,
+    star_players_out_diff,
+    
+    -- Feature interactions: Injury impact with other key features
+    injury_impact_x_form_diff,
+    away_injury_x_form,
+    home_injury_x_form,
+    home_injury_impact_ratio,
+    away_injury_impact_ratio,
+    
+    -- Explicit injury penalty features
+    home_injury_penalty_severe,
+    away_injury_penalty_severe,
+    home_injury_penalty_absolute,
+    away_injury_penalty_absolute,
     
     CURRENT_TIMESTAMP as updated_at
     

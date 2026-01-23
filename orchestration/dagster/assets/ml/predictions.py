@@ -182,21 +182,48 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
                 gf.home_season_win_pct,
                 gf.away_season_win_pct,
                 gf.season_win_pct_diff,
-                -- Star player return features
-                gf.home_has_star_return,
+                -- Star player return features (removed redundant: home_has_star_return, away_has_star_return, star_return_advantage)
                 gf.home_star_players_returning,
                 gf.home_key_players_returning,
                 gf.home_extended_returns,
                 gf.home_total_return_impact,
                 gf.home_max_days_since_return,
-                gf.away_has_star_return,
                 gf.away_star_players_returning,
                 gf.away_key_players_returning,
                 gf.away_extended_returns,
                 gf.away_total_return_impact,
                 gf.away_max_days_since_return,
-                gf.star_return_advantage,
                 gf.return_impact_diff,
+                -- Injury features
+                gf.home_star_players_out,
+                gf.home_key_players_out,
+                gf.home_star_players_doubtful,
+                gf.home_key_players_doubtful,
+                gf.home_star_players_questionable,
+                gf.home_injury_impact_score,
+                gf.home_injured_players_count,
+                gf.home_has_key_injury,
+                gf.away_star_players_out,
+                gf.away_key_players_out,
+                gf.away_star_players_doubtful,
+                gf.away_key_players_doubtful,
+                gf.away_star_players_questionable,
+                gf.away_injury_impact_score,
+                gf.away_injured_players_count,
+                gf.away_has_key_injury,
+                gf.injury_impact_diff,
+                gf.star_players_out_diff,
+                -- Feature interactions: Injury impact with other key features
+                gf.injury_impact_x_form_diff,
+                gf.away_injury_x_form,
+                gf.home_injury_x_form,
+                gf.home_injury_impact_ratio,
+                gf.away_injury_impact_ratio,
+                -- Explicit injury penalty features (v3 - fixed encoding)
+                gf.home_injury_penalty_severe,
+                gf.away_injury_penalty_severe,
+                gf.home_injury_penalty_absolute,
+                gf.away_injury_penalty_absolute,
                 -- NEW: Momentum/Streak features (Phase 1)
                 COALESCE(mf.home_win_streak, 0) AS home_win_streak,
                 COALESCE(mf.home_loss_streak, 0) AS home_loss_streak,
@@ -225,8 +252,8 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
                 COALESCE(mf.home_home_win_pct, 0.5) AS home_home_win_pct,
                 COALESCE(mf.away_road_win_pct, 0.5) AS away_road_win_pct,
                 COALESCE(mf.home_advantage, 0) AS home_advantage
-            FROM marts.mart_game_features gf
-            LEFT JOIN intermediate.int_game_momentum_features mf ON mf.game_id = gf.game_id
+            FROM marts__local.mart_game_features gf
+            LEFT JOIN intermediate__local.int_game_momentum_features mf ON mf.game_id = gf.game_id
             WHERE {date_filter}
             ORDER BY gf.game_date
         """
@@ -250,15 +277,79 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         predictions = model.predict(X_pred)
         probabilities = model.predict_proba(X_pred)
         
+        # Confidence calibration: reduce confidence when injury impact ratios are extreme
+        # This helps flag uncertain predictions when injuries significantly impact team strength
+        def calibrate_confidence(base_confidence, home_ratio, away_ratio, injury_diff):
+            """
+            Reduce confidence when injury impact ratios are extreme.
+            
+            Args:
+                base_confidence: Raw model confidence (0-1)
+                home_ratio: home_injury_impact_ratio
+                away_ratio: away_injury_impact_ratio  
+                injury_diff: injury_impact_diff (absolute value)
+            
+            Returns:
+                Calibrated confidence (0-1)
+            """
+            calibrated = base_confidence
+            
+            # Penalize extreme injury impact ratios (>20 = injury is 20x team's form)
+            # Higher ratio = more uncertainty
+            max_ratio = max(abs(home_ratio) if pd.notna(home_ratio) else 0, 
+                          abs(away_ratio) if pd.notna(away_ratio) else 0)
+            
+            if max_ratio > 20:
+                # Severe penalty: reduce confidence by up to 40% for ratios > 30
+                penalty = min(0.4, (max_ratio - 20) / 50)  # 0.4 penalty at ratio=45
+                calibrated = calibrated * (1 - penalty)
+            elif max_ratio > 10:
+                # Moderate penalty: reduce confidence by up to 20% for ratios 10-20
+                penalty = (max_ratio - 10) / 50  # 0.2 penalty at ratio=20
+                calibrated = calibrated * (1 - penalty)
+            
+            # Also penalize very large absolute injury impact differences (>1000)
+            # This indicates one team is significantly more injured
+            if abs(injury_diff) > 1000:
+                additional_penalty = min(0.15, (abs(injury_diff) - 1000) / 10000)
+                calibrated = calibrated * (1 - additional_penalty)
+            
+            return max(0.1, min(1.0, calibrated))  # Clamp between 0.1 and 1.0
+        
         # Store predictions
         predictions_inserted = 0
         for idx, row in df.iterrows():
             game_id = row['game_id']
             pred_value = int(predictions[idx])
-            confidence = float(max(probabilities[idx]))  # Max probability
+            base_confidence = float(max(probabilities[idx]))  # Max probability
             
-            # Only insert if confidence meets threshold
-            if confidence >= config.min_confidence:
+            # Get injury impact ratios for calibration
+            home_ratio = row.get('home_injury_impact_ratio', 0) if 'home_injury_impact_ratio' in row else 0
+            away_ratio = row.get('away_injury_impact_ratio', 0) if 'away_injury_impact_ratio' in row else 0
+            injury_diff = row.get('injury_impact_diff', 0) if 'injury_impact_diff' in row else 0
+            
+            # Calibrate confidence
+            home_ratio_val = float(home_ratio) if pd.notna(home_ratio) else 0.0
+            away_ratio_val = float(away_ratio) if pd.notna(away_ratio) else 0.0
+            injury_diff_val = float(injury_diff) if pd.notna(injury_diff) else 0.0
+            
+            confidence = calibrate_confidence(
+                base_confidence,
+                home_ratio_val,
+                away_ratio_val,
+                injury_diff_val
+            )
+            
+            # Log significant calibrations for debugging
+            if abs(base_confidence - confidence) > 0.1:
+                context.log.debug(
+                    f"Game {game_id}: Confidence calibrated from {base_confidence:.3f} to {confidence:.3f} "
+                    f"(home_ratio={home_ratio_val:.2f}, away_ratio={away_ratio_val:.2f}, injury_diff={injury_diff_val:.2f})"
+                )
+            
+            # Only insert if confidence meets threshold (use base confidence for threshold check, 
+            # but store calibrated confidence to reflect uncertainty from injuries)
+            if base_confidence >= config.min_confidence:
                 cursor.execute(
                     """
                     INSERT INTO ml_dev.predictions (
