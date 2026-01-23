@@ -16,19 +16,32 @@ sys.path.insert(0, str(project_root / "orchestration" / "dagster"))
 from dagster import Definitions, load_assets_from_modules
 
 # Import asset modules
-from orchestration.dagster.assets import ingestion, transformation
+from orchestration.dagster.assets import ingestion, transformation, quality, ml
 
 # Import schedules
 from orchestration.dagster.schedules import schedules, jobs
 
 # Load assets from modules
-all_assets = load_assets_from_modules([ingestion, transformation])
+all_assets = load_assets_from_modules([ingestion, transformation, quality, ml])
 
-# Skip quality assets for now - requires Baselinr config that's complex to setup in Docker
-# To enable: run `make generate-configs` and ensure baselinr_config.yml exists
+# Extract resources from Baselinr definitions if quality assets are loaded
+resources = {}
+if hasattr(quality, 'baselinr_defs') and quality.baselinr_defs:
+    # Baselinr definitions include the 'baselinr' resource
+    # Definitions.resources is a dict-like object
+    if hasattr(quality.baselinr_defs, 'resources'):
+        # Convert to dict if it's not already
+        baselinr_resources = quality.baselinr_defs.resources
+        if hasattr(baselinr_resources, 'keys'):
+            # It's dict-like, extract the resources
+            for key in baselinr_resources.keys():
+                resources[key] = baselinr_resources[key]
+        elif isinstance(baselinr_resources, dict):
+            resources.update(baselinr_resources)
 
 defs = Definitions(
     assets=all_assets,
+    resources=resources if resources else None,
     jobs=jobs,
     schedules=schedules,
 )

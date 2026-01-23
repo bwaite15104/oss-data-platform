@@ -1,9 +1,8 @@
-MODEL (
-    name marts.mart_game_features,
-    kind FULL,
-    description 'ML-ready game features for prediction models - optimized with LATERAL joins for performance'
-);
+-- Script to manually create mart_game_features table with optimized LATERAL joins
+-- This is a workaround for SQLMesh materialization issues
+SET statement_timeout = 0;
 
+CREATE TABLE IF NOT EXISTS marts.marts__mart_game_features__246582899 AS
 -- Build feature set for each game combining home and away team stats
 WITH game_base AS (
     SELECT 
@@ -154,9 +153,9 @@ SELECT
     h.home_rolling_5_win_pct,
     h.home_rolling_5_apg,
     h.home_rolling_5_rpg,
-        h.home_rolling_5_fg_pct,
-        h.home_rolling_5_fg3_pct,
-        h.home_rolling_10_ppg,
+    h.home_rolling_5_fg_pct,
+    h.home_rolling_5_fg3_pct,
+    h.home_rolling_10_ppg,
     h.home_rolling_10_win_pct,
     
     -- Away team rolling features
@@ -165,9 +164,9 @@ SELECT
     a.away_rolling_5_win_pct,
     a.away_rolling_5_apg,
     a.away_rolling_5_rpg,
-        a.away_rolling_5_fg_pct,
-        a.away_rolling_5_fg3_pct,
-        a.away_rolling_10_ppg,
+    a.away_rolling_5_fg_pct,
+    a.away_rolling_5_fg3_pct,
+    a.away_rolling_10_ppg,
     a.away_rolling_10_win_pct,
     
     -- Differential features (home - away)
@@ -227,4 +226,4 @@ LEFT JOIN intermediate.int_team_star_player_features asf
     ON g.game_id = asf.game_id 
     AND g.away_team_id = asf.team_id
 WHERE h.home_rolling_5_ppg IS NOT NULL 
-  AND a.away_rolling_5_ppg IS NOT NULL  -- Ensure both teams have rolling stats
+  AND a.away_rolling_5_ppg IS NOT NULL;  -- Ensure both teams have rolling stats

@@ -7,12 +7,14 @@ gateways:
       user: postgres
       password: postgres
       database: nba_analytics
+      # Increase statement timeout for large materializations (30 minutes)
+      # Note: PostgreSQL uses milliseconds, but SQLMesh may handle this differently
 
 default_gateway: local
 
 model_defaults:
   dialect: postgres
-  start: '2024-10-01'  # Start from recent season - materialization enables expansion later
+  start: '2010-10-01'  # Start from 15 years ago to include more historical data for training
 
 # Physical schema mapping
 physical_schema_mapping:

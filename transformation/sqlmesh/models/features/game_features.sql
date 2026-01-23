@@ -1,7 +1,7 @@
 MODEL (
     name features_dev.game_features,
     kind FULL,
-    description 'ML-ready game features for prediction models',
+    description 'ML-ready game features for prediction models - updated with 15 years of historical data',
     grain game_id
 );
 

@@ -53,86 +53,141 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
     Returns model metadata including version, accuracy, and metrics.
     """
     try:
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
         import pandas as pd
         import joblib
         from datetime import datetime
         import json
+        from sqlalchemy import create_engine
     except ImportError as e:
-        context.log.error(f"Missing dependency: {e}. Install: pip install scikit-learn xgboost pandas joblib")
+        context.log.error(f"Missing dependency: {e}. Install: pip install scikit-learn xgboost pandas joblib sqlalchemy")
         raise
     
     try:
-        # Database connection
+        # Database connection using SQLAlchemy (better pandas compatibility)
         database = os.getenv("POSTGRES_DB", "nba_analytics")
         host = os.getenv("POSTGRES_HOST", "localhost")
+        port = int(os.getenv("POSTGRES_PORT", "5432"))
+        user = os.getenv("POSTGRES_USER", "postgres")
+        password = os.getenv("POSTGRES_PASSWORD", "postgres")
         
+        # Create SQLAlchemy engine
+        engine = create_engine(f"postgresql://{user}:{password}@{host}:{port}/{database}")
+        
+        # Also create psycopg2 connection for metadata operations
+        import psycopg2
         conn = psycopg2.connect(
             host=host,
-            port=int(os.getenv("POSTGRES_PORT", "5432")),
+            port=port,
             database=database,
-            user=os.getenv("POSTGRES_USER", "postgres"),
-            password=os.getenv("POSTGRES_PASSWORD", "postgres"),
+            user=user,
+            password=password,
         )
         
         context.log.info("Loading training features from features_dev.game_features...")
         
+        # Get today's date in Eastern timezone (NBA games are scheduled in ET)
+        # Exclude today's games from training (use for predictions/testing)
+        try:
+            import pytz
+            eastern = pytz.timezone('US/Eastern')
+            today = datetime.now(eastern).date()
+        except ImportError:
+            # Fallback to UTC if pytz not available
+            context.log.warning("pytz not available, using UTC date. Install with: pip install pytz")
+            today = datetime.now().date()
+        context.log.info(f"Excluding games from {today} (Eastern) and later for training")
+        
+        # Format dates for SQL query (avoid parameter binding issues with pandas)
+        today_str = today.strftime('%Y-%m-%d')
+        
         # Load features - only use completed games with actual results
-        query = """
+        query = f"""
             SELECT 
-                game_id,
-                game_date,
-                home_team_id,
-                away_team_id,
+                gf.game_id,
+                gf.game_date,
+                gf.home_team_id,
+                gf.away_team_id,
                 -- Rolling 5-game features
-                home_rolling_5_ppg,
-                away_rolling_5_ppg,
-                home_rolling_5_win_pct,
-                away_rolling_5_win_pct,
-                home_rolling_5_opp_ppg,
-                away_rolling_5_opp_ppg,
+                gf.home_rolling_5_ppg,
+                gf.away_rolling_5_ppg,
+                gf.home_rolling_5_win_pct,
+                gf.away_rolling_5_win_pct,
+                gf.home_rolling_5_opp_ppg,
+                gf.away_rolling_5_opp_ppg,
                 -- Rolling 10-game features
-                home_rolling_10_ppg,
-                away_rolling_10_ppg,
-                home_rolling_10_win_pct,
-                away_rolling_10_win_pct,
+                gf.home_rolling_10_ppg,
+                gf.away_rolling_10_ppg,
+                gf.home_rolling_10_win_pct,
+                gf.away_rolling_10_win_pct,
                 -- Feature differences
-                ppg_diff_5,
-                win_pct_diff_5,
-                ppg_diff_10,
-                win_pct_diff_10,
+                gf.ppg_diff_5,
+                gf.win_pct_diff_5,
+                gf.ppg_diff_10,
+                gf.win_pct_diff_10,
                 -- Season-level features
-                home_season_win_pct,
-                away_season_win_pct,
-                season_win_pct_diff,
+                gf.home_season_win_pct,
+                gf.away_season_win_pct,
+                gf.season_win_pct_diff,
                 -- Star player return features
-                home_has_star_return,
-                home_star_players_returning,
-                home_key_players_returning,
-                home_extended_returns,
-                home_total_return_impact,
-                home_max_days_since_return,
-                away_has_star_return,
-                away_star_players_returning,
-                away_key_players_returning,
-                away_extended_returns,
-                away_total_return_impact,
-                away_max_days_since_return,
-                star_return_advantage,
-                return_impact_diff,
+                gf.home_has_star_return,
+                gf.home_star_players_returning,
+                gf.home_key_players_returning,
+                gf.home_extended_returns,
+                gf.home_total_return_impact,
+                gf.home_max_days_since_return,
+                gf.away_has_star_return,
+                gf.away_star_players_returning,
+                gf.away_key_players_returning,
+                gf.away_extended_returns,
+                gf.away_total_return_impact,
+                gf.away_max_days_since_return,
+                gf.star_return_advantage,
+                gf.return_impact_diff,
+                -- NEW: Momentum/Streak features (Phase 1)
+                COALESCE(mf.home_win_streak, 0) AS home_win_streak,
+                COALESCE(mf.home_loss_streak, 0) AS home_loss_streak,
+                COALESCE(mf.away_win_streak, 0) AS away_win_streak,
+                COALESCE(mf.away_loss_streak, 0) AS away_loss_streak,
+                -- NEW: Momentum score (weighted recent wins by recency)
+                COALESCE(mf.home_momentum_score, 0) AS home_momentum_score,
+                COALESCE(mf.away_momentum_score, 0) AS away_momentum_score,
+                -- NEW: Rest days features (Phase 1)
+                COALESCE(mf.home_rest_days, 0) AS home_rest_days,
+                COALESCE(mf.home_back_to_back, FALSE) AS home_back_to_back,
+                COALESCE(mf.away_rest_days, 0) AS away_rest_days,
+                COALESCE(mf.away_back_to_back, FALSE) AS away_back_to_back,
+                COALESCE(mf.rest_advantage, 0) AS rest_advantage,
+                -- NEW: Form divergence features (Phase 1)
+                COALESCE(mf.home_form_divergence, 0) AS home_form_divergence,
+                COALESCE(mf.away_form_divergence, 0) AS away_form_divergence,
+                -- NEW: Head-to-head features (Phase 2)
+                COALESCE(mf.home_h2h_win_pct, 0.5) AS home_h2h_win_pct,
+                COALESCE(mf.home_h2h_recent_wins, 0) AS home_h2h_recent_wins,
+                -- NEW: Opponent quality features (Phase 2)
+                COALESCE(mf.home_recent_opp_avg_win_pct, 0.5) AS home_recent_opp_avg_win_pct,
+                COALESCE(mf.away_recent_opp_avg_win_pct, 0.5) AS away_recent_opp_avg_win_pct,
+                COALESCE(mf.home_performance_vs_quality, 0.5) AS home_performance_vs_quality,
+                COALESCE(mf.away_performance_vs_quality, 0.5) AS away_performance_vs_quality,
+                -- NEW: Home/Road performance features (Phase 2)
+                COALESCE(mf.home_home_win_pct, 0.5) AS home_home_win_pct,
+                COALESCE(mf.away_road_win_pct, 0.5) AS away_road_win_pct,
+                COALESCE(mf.home_advantage, 0) AS home_advantage,
                 -- Target variable
-                home_win
-            FROM features_dev.game_features
-            WHERE game_date IS NOT NULL
-              AND home_score IS NOT NULL
-              AND away_score IS NOT NULL
-              AND home_win IS NOT NULL
-              AND game_date::date < '2026-01-18'  -- Exclude 1/18 for prediction testing
-            ORDER BY game_date
+                gf.home_win
+            FROM features_dev.game_features gf
+            LEFT JOIN intermediate.int_game_momentum_features mf ON mf.game_id = gf.game_id
+            WHERE gf.game_date IS NOT NULL
+              AND gf.home_score IS NOT NULL
+              AND gf.away_score IS NOT NULL
+              AND gf.home_win IS NOT NULL
+              AND gf.game_date::date >= '2010-10-01'::date  -- Only use last 15 years of data
+              AND gf.game_date::date < '{today_str}'::date  -- Exclude today's games for prediction testing
+              AND gf.game_date::date < '2026-01-19'::date  -- Exclude Mavericks game date (2026-01-19) from training
+            ORDER BY gf.game_date
         """
         
-        df = pd.read_sql_query(query, conn)
+        # Use SQLAlchemy engine for pandas (better compatibility)
+        df = pd.read_sql_query(query, engine)
         
         if len(df) == 0:
             raise ValueError("No training data available in features_dev.game_features")

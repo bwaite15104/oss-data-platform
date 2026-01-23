@@ -133,68 +133,102 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         model = joblib.load(model_path)
         
         # Determine date cutoff for predictions
-        if config.prediction_date_cutoff:
+        is_backtesting = config.prediction_date_cutoff is not None
+        if is_backtesting:
             date_cutoff = config.prediction_date_cutoff
             context.log.info(f"Using backtesting mode: prediction_date_cutoff={date_cutoff}")
         else:
             date_cutoff = "CURRENT_DATE"
             context.log.info("Using production mode: predicting games >= CURRENT_DATE")
         
-        # Load features for upcoming games (games without final scores)
+        # Load features for games to predict
         context.log.info("Loading features for games to predict...")
         
-        # Use parameterized date cutoff (either fixed date for backtesting or CURRENT_DATE for production)
-        if date_cutoff == "CURRENT_DATE":
-            date_filter = "game_date >= CURRENT_DATE"
+        # Build query - for backtesting, predict all games on/after the date
+        # For production, only predict games without scores (future games)
+        if is_backtesting:
+            # Backtesting: predict games on the specified date (regardless of score status)
+            date_filter = f"gf.game_date::date = '{date_cutoff}'::date"
+            context.log.info(f"Backtesting: predicting games on {date_cutoff}")
         else:
-            date_filter = f"game_date >= '{date_cutoff}'::date"
+            # Production: predict future games without scores
+            date_filter = "gf.game_date >= CURRENT_DATE AND (gf.home_score IS NULL OR gf.away_score IS NULL)"
+            context.log.info("Production: predicting future games without scores")
         
         query = f"""
             SELECT 
-                game_id,
-                game_date,
-                home_team_id,
-                away_team_id,
+                gf.game_id,
+                gf.game_date,
+                gf.home_team_id,
+                gf.away_team_id,
                 -- Rolling 5-game features
-                home_rolling_5_ppg,
-                away_rolling_5_ppg,
-                home_rolling_5_win_pct,
-                away_rolling_5_win_pct,
-                home_rolling_5_opp_ppg,
-                away_rolling_5_opp_ppg,
+                gf.home_rolling_5_ppg,
+                gf.away_rolling_5_ppg,
+                gf.home_rolling_5_win_pct,
+                gf.away_rolling_5_win_pct,
+                gf.home_rolling_5_opp_ppg,
+                gf.away_rolling_5_opp_ppg,
                 -- Rolling 10-game features
-                home_rolling_10_ppg,
-                away_rolling_10_ppg,
-                home_rolling_10_win_pct,
-                away_rolling_10_win_pct,
+                gf.home_rolling_10_ppg,
+                gf.away_rolling_10_ppg,
+                gf.home_rolling_10_win_pct,
+                gf.away_rolling_10_win_pct,
                 -- Feature differences
-                ppg_diff_5,
-                win_pct_diff_5,
-                ppg_diff_10,
-                win_pct_diff_10,
+                gf.ppg_diff_5,
+                gf.win_pct_diff_5,
+                gf.ppg_diff_10,
+                gf.win_pct_diff_10,
                 -- Season-level features
-                home_season_win_pct,
-                away_season_win_pct,
-                season_win_pct_diff,
+                gf.home_season_win_pct,
+                gf.away_season_win_pct,
+                gf.season_win_pct_diff,
                 -- Star player return features
-                home_has_star_return,
-                home_star_players_returning,
-                home_key_players_returning,
-                home_extended_returns,
-                home_total_return_impact,
-                home_max_days_since_return,
-                away_has_star_return,
-                away_star_players_returning,
-                away_key_players_returning,
-                away_extended_returns,
-                away_total_return_impact,
-                away_max_days_since_return,
-                star_return_advantage,
-                return_impact_diff
-            FROM features_dev.game_features
-            WHERE (home_score IS NULL OR away_score IS NULL)
-               OR {date_filter}
-            ORDER BY game_date
+                gf.home_has_star_return,
+                gf.home_star_players_returning,
+                gf.home_key_players_returning,
+                gf.home_extended_returns,
+                gf.home_total_return_impact,
+                gf.home_max_days_since_return,
+                gf.away_has_star_return,
+                gf.away_star_players_returning,
+                gf.away_key_players_returning,
+                gf.away_extended_returns,
+                gf.away_total_return_impact,
+                gf.away_max_days_since_return,
+                gf.star_return_advantage,
+                gf.return_impact_diff,
+                -- NEW: Momentum/Streak features (Phase 1)
+                COALESCE(mf.home_win_streak, 0) AS home_win_streak,
+                COALESCE(mf.home_loss_streak, 0) AS home_loss_streak,
+                COALESCE(mf.away_win_streak, 0) AS away_win_streak,
+                COALESCE(mf.away_loss_streak, 0) AS away_loss_streak,
+                COALESCE(mf.home_momentum_score, 0) AS home_momentum_score,
+                COALESCE(mf.away_momentum_score, 0) AS away_momentum_score,
+                -- NEW: Rest days features (Phase 1)
+                COALESCE(mf.home_rest_days, 0) AS home_rest_days,
+                COALESCE(mf.home_back_to_back, FALSE) AS home_back_to_back,
+                COALESCE(mf.away_rest_days, 0) AS away_rest_days,
+                COALESCE(mf.away_back_to_back, FALSE) AS away_back_to_back,
+                COALESCE(mf.rest_advantage, 0) AS rest_advantage,
+                -- NEW: Form divergence features (Phase 1)
+                COALESCE(mf.home_form_divergence, 0) AS home_form_divergence,
+                COALESCE(mf.away_form_divergence, 0) AS away_form_divergence,
+                -- NEW: Head-to-head features (Phase 2)
+                COALESCE(mf.home_h2h_win_pct, 0.5) AS home_h2h_win_pct,
+                COALESCE(mf.home_h2h_recent_wins, 0) AS home_h2h_recent_wins,
+                -- NEW: Opponent quality features (Phase 2)
+                COALESCE(mf.home_recent_opp_avg_win_pct, 0.5) AS home_recent_opp_avg_win_pct,
+                COALESCE(mf.away_recent_opp_avg_win_pct, 0.5) AS away_recent_opp_avg_win_pct,
+                COALESCE(mf.home_performance_vs_quality, 0.5) AS home_performance_vs_quality,
+                COALESCE(mf.away_performance_vs_quality, 0.5) AS away_performance_vs_quality,
+                -- NEW: Home/Road performance features (Phase 2)
+                COALESCE(mf.home_home_win_pct, 0.5) AS home_home_win_pct,
+                COALESCE(mf.away_road_win_pct, 0.5) AS away_road_win_pct,
+                COALESCE(mf.home_advantage, 0) AS home_advantage
+            FROM marts.mart_game_features gf
+            LEFT JOIN intermediate.int_game_momentum_features mf ON mf.game_id = gf.game_id
+            WHERE {date_filter}
+            ORDER BY gf.game_date
         """
         
         df = pd.read_sql_query(query, conn)

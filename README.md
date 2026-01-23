@@ -172,8 +172,13 @@ This platform includes a complete NBA data ingestion example:
 - **dlt Pipeline**: NBA Stats API integration
 - **Dagster Assets**: Orchestrated NBA data ingestion
 - **Data Quality**: Baselinr monitoring for NBA datasets
+- **ML Pipeline**: Game winner prediction model with betting odds integration
 
 See [docs/guides/nba-ingestion.md](docs/guides/nba-ingestion.md) for the NBA ingestion guide.
+
+### Future: Betting Dashboard
+
+A dashboard to visualize ML predictions, betting odds, and potential payouts is planned. See [docs/guides/nba-betting-dashboard-roadmap.md](docs/guides/nba-betting-dashboard-roadmap.md) for the roadmap.
 
 ## Development
 

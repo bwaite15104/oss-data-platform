@@ -474,6 +474,195 @@ def int_team_star_player_features(context: AssetExecutionContext) -> Dict[str, A
     return result
 
 
+@asset(
+    group_name="transformations",
+    description="Materialize intermediate.int_team_streaks - Team win/loss streaks",
+    deps=[nba_games],  # Depends on games data
+    automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)
+def int_team_streaks(context: AssetExecutionContext) -> Dict[str, Any]:
+    """Materialize intermediate.int_team_streaks model with monitoring."""
+    config = SQLMeshConfig()
+    result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_streaks", config)
+    
+    # Get table row count for metadata
+    conn = get_postgres_connection()
+    try:
+        row_count = get_table_row_count(conn, "intermediate", "int_team_streaks")
+        
+        metadata = {
+            "duration_seconds": MetadataValue.float(result["duration_seconds"]),
+            "row_count": MetadataValue.int(row_count) if row_count is not None else MetadataValue.text("N/A"),
+            "active_queries_before": MetadataValue.int(result["active_queries_before"]),
+            "blocking_locks_before": MetadataValue.int(result["blocking_locks_before"]),
+            "active_queries_after": MetadataValue.int(result["active_queries_after"]),
+            "blocking_locks_after": MetadataValue.int(result["blocking_locks_after"]),
+        }
+        
+        context.add_output_metadata(metadata)
+    finally:
+        conn.close()
+    
+    return result
+
+
+@asset(
+    group_name="transformations",
+    description="Materialize intermediate.int_team_rest_days - Team rest days and back-to-back flags",
+    deps=[nba_games],  # Depends on games data
+    automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)
+def int_team_rest_days(context: AssetExecutionContext) -> Dict[str, Any]:
+    """Materialize intermediate.int_team_rest_days model with monitoring."""
+    config = SQLMeshConfig()
+    result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_rest_days", config)
+    
+    # Get table row count for metadata
+    conn = get_postgres_connection()
+    try:
+        row_count = get_table_row_count(conn, "intermediate", "int_team_rest_days")
+        
+        metadata = {
+            "duration_seconds": MetadataValue.float(result["duration_seconds"]),
+            "row_count": MetadataValue.int(row_count) if row_count is not None else MetadataValue.text("N/A"),
+            "active_queries_before": MetadataValue.int(result["active_queries_before"]),
+            "blocking_locks_before": MetadataValue.int(result["blocking_locks_before"]),
+            "active_queries_after": MetadataValue.int(result["active_queries_after"]),
+            "blocking_locks_after": MetadataValue.int(result["blocking_locks_after"]),
+        }
+        
+        context.add_output_metadata(metadata)
+    finally:
+        conn.close()
+    
+    return result
+
+
+@asset(
+    group_name="transformations",
+    description="Materialize intermediate.int_team_h2h_stats - Head-to-head historical stats between teams",
+    deps=[nba_games],  # Depends on games data
+    automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)
+def int_team_h2h_stats(context: AssetExecutionContext) -> Dict[str, Any]:
+    """Materialize intermediate.int_team_h2h_stats model with monitoring."""
+    config = SQLMeshConfig()
+    result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_h2h_stats", config)
+    
+    # Get table row count for metadata
+    conn = get_postgres_connection()
+    try:
+        row_count = get_table_row_count(conn, "intermediate", "int_team_h2h_stats")
+        
+        metadata = {
+            "duration_seconds": MetadataValue.float(result["duration_seconds"]),
+            "row_count": MetadataValue.int(row_count) if row_count is not None else MetadataValue.text("N/A"),
+            "active_queries_before": MetadataValue.int(result["active_queries_before"]),
+            "active_queries_after": MetadataValue.int(result["active_queries_after"]),
+        }
+        context.add_output_metadata(metadata)
+    finally:
+        conn.close()
+    
+    return result
+
+
+@asset(
+    group_name="transformations",
+    description="Materialize intermediate.int_team_opponent_quality - Average win % of recent opponents",
+    deps=[nba_games, int_team_season_stats],  # Depends on games and season stats
+    automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)
+def int_team_opponent_quality(context: AssetExecutionContext) -> Dict[str, Any]:
+    """Materialize intermediate.int_team_opponent_quality model with monitoring."""
+    config = SQLMeshConfig()
+    result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_opponent_quality", config)
+    
+    # Get table row count for metadata
+    conn = get_postgres_connection()
+    try:
+        row_count = get_table_row_count(conn, "intermediate", "int_team_opponent_quality")
+        
+        metadata = {
+            "duration_seconds": MetadataValue.float(result["duration_seconds"]),
+            "row_count": MetadataValue.int(row_count) if row_count is not None else MetadataValue.text("N/A"),
+            "active_queries_before": MetadataValue.int(result["active_queries_before"]),
+            "active_queries_after": MetadataValue.int(result["active_queries_after"]),
+        }
+        context.add_output_metadata(metadata)
+    finally:
+        conn.close()
+    
+    return result
+
+
+@asset(
+    group_name="transformations",
+    description="Materialize intermediate.int_team_home_road_performance - Team performance at home vs on the road",
+    deps=[nba_games],  # Depends on games data
+    automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)
+def int_team_home_road_performance(context: AssetExecutionContext) -> Dict[str, Any]:
+    """Materialize intermediate.int_team_home_road_performance model with monitoring."""
+    config = SQLMeshConfig()
+    result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_home_road_performance", config)
+    
+    # Get table row count for metadata
+    conn = get_postgres_connection()
+    try:
+        row_count = get_table_row_count(conn, "intermediate", "int_team_home_road_performance")
+        
+        metadata = {
+            "duration_seconds": MetadataValue.float(result["duration_seconds"]),
+            "row_count": MetadataValue.int(row_count) if row_count is not None else MetadataValue.text("N/A"),
+            "active_queries_before": MetadataValue.int(result["active_queries_before"]),
+            "active_queries_after": MetadataValue.int(result["active_queries_after"]),
+        }
+        context.add_output_metadata(metadata)
+    finally:
+        conn.close()
+    
+    return result
+
+
+@asset(
+    group_name="transformations",
+    description="Materialize intermediate.int_game_momentum_features - Combined momentum features (streaks, rest days, form divergence, h2h, opponent quality, home/road)",
+    deps=[int_team_streaks, int_team_rest_days, int_team_rolling_stats, int_team_season_stats, int_team_h2h_stats, int_team_opponent_quality, int_team_home_road_performance],  # Depends on all momentum-related models
+    automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)
+def int_game_momentum_features(context: AssetExecutionContext) -> Dict[str, Any]:
+    """Materialize intermediate.int_game_momentum_features model with monitoring."""
+    config = SQLMeshConfig()
+    result = execute_sqlmesh_plan_for_model(context, "intermediate.int_game_momentum_features", config)
+    
+    # Get table row count for metadata
+    conn = get_postgres_connection()
+    try:
+        row_count = get_table_row_count(conn, "intermediate", "int_game_momentum_features")
+        
+        metadata = {
+            "duration_seconds": MetadataValue.float(result["duration_seconds"]),
+            "row_count": MetadataValue.int(row_count) if row_count is not None else MetadataValue.text("N/A"),
+            "active_queries_before": MetadataValue.int(result["active_queries_before"]),
+            "blocking_locks_before": MetadataValue.int(result["blocking_locks_before"]),
+            "active_queries_after": MetadataValue.int(result["active_queries_after"]),
+            "blocking_locks_after": MetadataValue.int(result["blocking_locks_after"]),
+        }
+        
+        context.add_output_metadata(metadata)
+    finally:
+        conn.close()
+    
+    return result
+
+
 # Feature Models - Materialized tables
 @asset(
     group_name="transformations",
