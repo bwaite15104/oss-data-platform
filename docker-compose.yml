@@ -56,6 +56,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-nba_analytics}
       - DATA_ENV=${DATA_ENV:-dev}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
       # dlt configuration for nba_stats pipeline
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST=postgres
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PORT=5432
@@ -80,6 +81,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mlflow:
+        condition: service_started
     command: dagster-webserver -h 0.0.0.0 -p 3000 -w /opt/dagster/dagster_home/workspace.yaml
     networks:
       - oss_data_platform
@@ -99,6 +102,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-nba_analytics}
       - DATA_ENV=${DATA_ENV:-dev}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
       # dlt configuration for nba_stats pipeline
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST=postgres
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__PORT=5432
@@ -118,6 +122,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mlflow:
+        condition: service_started
     command: dagster-daemon run -w /opt/dagster/dagster_home/workspace.yaml
     networks:
       - oss_data_platform
@@ -245,6 +251,50 @@ services:
     networks:
       - oss_data_platform
 
+  # MLflow Tracking Server (SQLite backend - no Postgres schema conflicts)
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.14.2
+    container_name: oss_data_platform_mlflow
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root file:///mlflow/artifacts
+    networks:
+      - oss_data_platform
+
+  # Feast UI Server (slim image with feast only)
+  feast_ui:
+    image: python:3.11-slim
+    container_name: oss_data_platform_feast_ui
+    ports:
+      - "${FEAST_UI_PORT:-8080}:8080"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-nba_analytics}
+    volumes:
+      - ./feature_repo:/app/feature_repo
+    working_dir: /app/feature_repo
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    command: ["sh", "-c", "pip install -q feast[postgres] psycopg2-binary && feast apply && feast ui --host 0.0.0.0 --port 8080"]
+    networks:
+      - oss_data_platform
+
 volumes:
   postgres_data:
   baselinr_data:
@@ -253,6 +303,7 @@ volumes:
   prometheus_data:
   grafana_data:
   metabase_data:
+  mlflow_artifacts:
 
 networks:
   oss_data_platform:

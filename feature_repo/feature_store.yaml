@@ -1,0 +1,11 @@
+project: nba_analytics
+registry: data/registry.db
+provider: local
+online_store:
+  type: postgres
+  host: postgres
+  port: 5432
+  database: nba_analytics
+  user: postgres
+  password: postgres
+entity_key_serialization_version: 3

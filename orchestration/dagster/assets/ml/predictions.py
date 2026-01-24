@@ -57,6 +57,13 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         import joblib
         from datetime import datetime
         import json
+        try:
+            import mlflow
+            import mlflow.xgboost
+            MLFLOW_AVAILABLE = True
+        except ImportError:
+            MLFLOW_AVAILABLE = False
+            context.log.warning("MLflow not available, using local model files")
     except ImportError as e:
         context.log.error(f"Missing dependency: {e}")
         raise
@@ -107,30 +114,45 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         hyperparams = model_row['hyperparameters']
         if isinstance(hyperparams, str):
             hyperparams = json.loads(hyperparams)
-        model_path = hyperparams.get('model_path')
         feature_cols = hyperparams.get('features', [])
+        mlflow_run_id = hyperparams.get('mlflow_run_id')
+        mlflow_tracking_uri = hyperparams.get('mlflow_tracking_uri', os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
         
-        # Handle both Docker (/app/models) and local paths
-        if model_path and Path(model_path).exists():
-            # Use stored path if it exists
-            pass
-        else:
-            # Try local models directory
-            local_model_path = project_root / "models" / f"game_winner_model_{model_version}.pkl"
-            if local_model_path.exists():
-                model_path = str(local_model_path)
-                context.log.info(f"Using local model path: {model_path}")
+        # Try to load model from MLflow first, fall back to local file
+        model = None
+        if MLFLOW_AVAILABLE and mlflow_run_id:
+            try:
+                mlflow.set_tracking_uri(mlflow_tracking_uri)
+                context.log.info(f"Loading model {model_version} from MLflow (run_id: {mlflow_run_id})")
+                model = mlflow.xgboost.load_model(f"runs:/{mlflow_run_id}/model")
+                context.log.info("Successfully loaded model from MLflow")
+            except Exception as e:
+                context.log.warning(f"Failed to load model from MLflow: {e}. Falling back to local file.")
+                model = None
+        
+        # Fall back to local file if MLflow failed or not available
+        if model is None:
+            model_path = hyperparams.get('model_path')
+            # Handle both Docker (/app/models) and local paths
+            if model_path and Path(model_path).exists():
+                # Use stored path if it exists
+                pass
             else:
-                raise FileNotFoundError(
-                    f"Model file not found. Tried:\n"
-                    f"  - Stored path: {hyperparams.get('model_path')}\n"
-                    f"  - Local path: {local_model_path}"
-                )
-        
-        context.log.info(f"Loading model {model_version} from {model_path}")
-        
-        # Load model
-        model = joblib.load(model_path)
+                # Try local models directory
+                local_model_path = project_root / "models" / f"game_winner_model_{model_version}.pkl"
+                if local_model_path.exists():
+                    model_path = str(local_model_path)
+                    context.log.info(f"Using local model path: {model_path}")
+                else:
+                    raise FileNotFoundError(
+                        f"Model file not found. Tried:\n"
+                        f"  - MLflow run_id: {mlflow_run_id}\n"
+                        f"  - Stored path: {hyperparams.get('model_path')}\n"
+                        f"  - Local path: {local_model_path}"
+                    )
+            
+            context.log.info(f"Loading model {model_version} from {model_path}")
+            model = joblib.load(model_path)
         
         # Determine date cutoff for predictions
         is_backtesting = config.prediction_date_cutoff is not None

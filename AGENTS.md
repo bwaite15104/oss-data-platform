@@ -21,6 +21,8 @@ NBA sports betting data platform. Goal: Build ML models to predict game outcomes
 
 ## Quick Reference
 - **Dagster UI**: http://localhost:3000
+- **MLflow UI**: http://localhost:5000 (model registry, experiments, versioning)
+- **Feast UI**: http://localhost:8080 (feature store, feature views)
 - **Metabase**: http://localhost:3002
 - **PostgreSQL**: localhost:5432 (postgres/postgres/nba_analytics)
 - **Database**: `nba_analytics` with layered schemas (raw_dev → staging_dev → marts_dev → features_dev → ml_dev)
@@ -60,6 +62,8 @@ For detailed context, reference these docs in `.cursor/docs/`:
 - `ingestion/dlt/pipelines/` - dlt data pipelines
 - `ingestion/dlt/config.py` - NBA CDN endpoints, constants
 - `orchestration/dagster/assets/` - Dagster asset definitions
+- `orchestration/dagster/assets/ml/` - ML assets (training, predictions); **MLflow** for model versioning
+- `feature_repo/` - **Feast** feature store (entities, data sources, feature views). See `feature_repo/README.md` for **versioning** (edit → `feast apply`; use Git + tags for history).
 - `transformation/sqlmesh/` - SQL transformations
 - `contracts/schemas/` - ODCS data contracts
 - `scripts/db_query.py` - Database query utility

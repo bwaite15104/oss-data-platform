@@ -66,8 +66,10 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         from datetime import datetime
         import json
         from sqlalchemy import create_engine
+        import mlflow
+        import mlflow.xgboost
     except ImportError as e:
-        context.log.error(f"Missing dependency: {e}. Install: pip install scikit-learn xgboost pandas joblib sqlalchemy")
+        context.log.error(f"Missing dependency: {e}. Install: pip install scikit-learn xgboost pandas joblib sqlalchemy mlflow")
         raise
     
     try:
@@ -91,6 +93,12 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
             password=password,
         )
         
+        # Initialize MLflow tracking
+        mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+        mlflow.set_tracking_uri(mlflow_tracking_uri)
+        mlflow.set_experiment("nba_game_winner_prediction")
+        
+        context.log.info(f"MLflow tracking URI: {mlflow_tracking_uri}")
         context.log.info("Loading training features from features_dev.game_features...")
         
         # Get today's date in Eastern timezone (NBA games are scheduled in ET)
@@ -342,13 +350,69 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         # Generate model version
         model_version = config.model_version or f"v1.0.{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
-        # Save model to disk (in Dagster storage or project directory)
+        # Also save model to disk (for backward compatibility)
         model_dir = project_root / "models"
         model_dir.mkdir(exist_ok=True)
         model_path = model_dir / f"game_winner_model_{model_version}.pkl"
         joblib.dump(model, model_path)
         
         context.log.info(f"Model saved to {model_path}")
+        
+        # Start MLflow run
+        run_id = None
+        with mlflow.start_run(run_name=f"game_winner_model_{model_version}") as run:
+            run_id = run.info.run_id
+            
+            # Log hyperparameters to MLflow
+            mlflow.log_params({
+                "max_depth": config.max_depth,
+                "n_estimators": config.n_estimators,
+                "learning_rate": config.learning_rate,
+                "subsample": config.subsample,
+                "colsample_bytree": config.colsample_bytree,
+                "min_child_weight": config.min_child_weight,
+                "gamma": config.gamma,
+                "reg_alpha": config.reg_alpha,
+                "reg_lambda": config.reg_lambda,
+                "interaction_feature_boost": config.interaction_feature_boost,
+                "test_size": config.test_size,
+                "random_state": config.random_state,
+                "model_version": model_version,
+            })
+            
+            # Log metrics to MLflow
+            mlflow.log_metrics({
+                "train_accuracy": float(train_score),
+                "test_accuracy": float(test_score),
+                "training_samples": len(X_train),
+                "test_samples": len(X_test),
+            })
+            
+            # Log feature list
+            mlflow.log_dict({"features": feature_cols}, "features.json")
+            
+            # Log feature importances
+            mlflow.log_dict(feature_importances, "feature_importances.json")
+            
+            # Log model artifact to MLflow (best-effort; 404 etc. possible with version mismatch)
+            try:
+                mlflow.xgboost.log_model(model, "model")
+                context.log.info("Model artifact logged to MLflow")
+            except Exception as e:
+                context.log.warning(f"Could not log model to MLflow (UI still shows params/metrics): {e}")
+            
+            context.log.info(f"MLflow run ID: {run_id}")
+        
+        # Register model version in MLflow Model Registry (after run completes)
+        try:
+            if run_id:
+                mv = mlflow.register_model(
+                    f"runs:/{run_id}/model",
+                    "game_winner_model",
+                )
+                context.log.info(f"Model registered in MLflow Model Registry: {getattr(mv, 'name', mv)} version {getattr(mv, 'version', '')}")
+        except Exception as e:
+            context.log.warning(f"Could not register model in MLflow: {e}")
         
         # Store metadata in ml_dev.model_registry
         cursor = conn.cursor()
@@ -381,6 +445,8 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
             "train_accuracy": float(train_score),
             "test_accuracy": float(test_score),
             "model_path": str(model_path),
+            "mlflow_run_id": run_id,
+            "mlflow_tracking_uri": mlflow_tracking_uri,
             "features": feature_cols,
             "training_samples": len(X_train),
             "test_samples": len(X_test),
