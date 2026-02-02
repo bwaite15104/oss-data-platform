@@ -259,53 +259,34 @@ For how the LLM should use these when doing model improvements, evaluation, or h
 4. ✅ **Prediction pipeline** - Dagster asset for generating predictions
 5. ✅ **Model versioning** - Automatic versioning and metadata tracking
 
-## 🚧 Next Immediate Steps (Phase 1: ML Pipeline)
+## 🚧 Next Steps (Fresh Start - Feb 2026)
 
-1. [x] **Validate ML assets** - Run training asset, verify model saved and registered ✅
-2. [x] **Test predictions** - Generate predictions for upcoming games ✅
-3. [x] **Model evaluation** - Track accuracy over time, compare predictions vs. actuals ✅
-4. [ ] **Feature expansion** - Add more features (rest days, advanced stats, head-to-head) - **HIGH PRIORITY**
-5. [x] **Hyperparameter tuning** - Attempted (2026-01-25): minimal improvement (0.6552 → 0.6559), need more impactful changes ✅
+After data infrastructure refactor (momentum feature groups), starting fresh iteration cycle.
 
-**Recent Model Improvements (2026-01-25):**
-- **Iteration 15 - Team Consistency/Variance Features**: Added team consistency/variance features to capture performance stability
-  - Features: `rolling_5_ppg_stddev`, `rolling_5_opp_ppg_stddev`, `rolling_5_ppg_cv`, `rolling_5_opp_ppg_cv` (and 10-game versions) for home/away teams
-  - Differential features: `ppg_stddev_diff_5`, `opp_ppg_stddev_diff_5`, `ppg_cv_diff_5`, `opp_ppg_cv_diff_5` (and 10-game versions)
-  - Rationale: Teams with lower variance (more consistent performance) are more predictable
-  - Coefficient of variation (stddev/mean) normalizes variance by team quality
-  - Results: Training in progress - check MLflow for results
-  - Status: Code complete, SQLMesh plan executed, training in progress
-- **Iteration 12 - Clutch Performance Features**: Added clutch performance features to capture team performance in close games (decided by <= 5 points)
-  - Features: `home_clutch_win_pct`, `away_clutch_win_pct`, `home_clutch_game_count`, `away_clutch_game_count`, `home_clutch_avg_point_diff`, `away_clutch_avg_point_diff`, `clutch_win_pct_diff`, `clutch_avg_point_diff_diff`
-  - Results: Training in progress - check MLflow for results
-  - Status: Code complete, SQLMesh plan executed, training in progress
-- **Iteration 9 - Rolling Schedule Strength (SOS) Features**: Added rolling schedule strength features using rolling opponent win_pct to contextualize team performance (5-game, 10-game, weighted SOS, SOS-adjusted win percentages)
-  - Features: `home_sos_5_rolling`, `away_sos_5_rolling`, `home_sos_10_rolling`, `away_sos_10_rolling`, `home_sos_5_weighted`, `away_sos_5_weighted`, `sos_5_diff`, `sos_10_diff`, `sos_5_weighted_diff`, `home_win_pct_vs_sos_10`, `away_win_pct_vs_sos_10`, `win_pct_vs_sos_10_diff`
-  - Results: Training in progress - check MLflow for results
-  - Status: Code complete, training in progress
-- **Iteration 7 - Recent Head-to-Head Performance Features**: Added recent H2H win percentages (last 3, last 5), point differentials, and momentum score
-  - Features: `home_h2h_win_pct_3`, `home_h2h_win_pct_5`, `home_h2h_avg_point_diff_3`, `home_h2h_avg_point_diff_5`, `home_h2h_momentum`
-  - Results: Training in progress - check MLflow for results
-  - Status: Code complete, SQLMesh plan executed, training in progress
-- **Iteration 6 - Increased Regularization**: Increased regularization to reduce overfitting
-  - Increased `reg_alpha` from 0.3 to 0.5, `reg_lambda` from 1.5 to 2.0, `min_child_samples` to 30
-  - Results: Test accuracy 0.6442, train accuracy 0.7484, train-test gap 0.1042 (reduced overfitting)
-  - Status: Overfitting reduced, but test accuracy still below target (0.75)
-- **Iteration 4 - Feature Selection**: Implemented automatic feature selection to remove low-importance features
-  - Added `feature_selection_enabled` and `feature_selection_threshold` config parameters
-  - Uses `SelectFromModel` with quick model to identify important features
-  - Results: 67 features selected (removed 33), test accuracy 0.6405, reduced overfitting
-  - Status: Code complete, threshold may need tuning
-- **Iteration 3 - Away Team Upset Tendency**: Added historical upset rate features for away teams
-  - Features: `away_upset_tendency_season`, `away_upset_tendency_rolling`, sample size indicators
-  - Results: Test accuracy 0.6438, features may need full materialization
-- **Iteration 2 - Feature Interactions**: Added 6 interaction features (injury×rest, net_rtg×home, etc.)
-  - Results: Test accuracy 0.6456, interaction features may need materialization
-- **Iteration 1 - Advanced Stats Features**: Added eFG%, TS%, Pace, OffRtg, DefRtg, NetRtg with rolling 5/10-game averages
-  - Updated: `int_team_rolling_stats`, `mart_game_features`, `features_dev.game_features`
-  - Added ~18 new features (9 per team × 2 time windows) + differentials
-  - Results: Test accuracy 0.6559 (best so far)
-- **Previous**: Hyperparameter tuning (0.6552 → 0.6559) - minimal improvement, confirmed need for feature engineering
+### Immediate Actions
+1. [ ] **Train baseline model** - Establish accuracy with current 800+ features
+2. [ ] **Feature importance analysis** - Identify which features are predictive
+3. [ ] **Algorithm comparison** - Test XGBoost, LightGBM, CatBoost
+4. [ ] **Feature selection** - Reduce noise from 800+ features
+
+### Key Learnings from Previous 120+ Iterations
+
+**What worked:**
+- Feature engineering had more impact than hyperparameter tuning
+- Advanced stats (eFG%, TS%, Pace, NetRtg) improved accuracy
+- Best test accuracy achieved: ~0.66
+
+**What didn't work:**
+- Aggressive feature selection (threshold 0.001) removed useful features
+- Win_pct × context interactions regressed accuracy
+- Small hyperparameter tweaks had diminishing returns
+
+**Infrastructure lessons:**
+- SQLMesh materialization issues blocked feature availability
+- Injury data had quality issues (zeros, missing values)
+- Feature groups architecture now in place for better backfills
+
+**See:** `ml_iteration/archive_2026-02-02/` for full iteration history
 
 ## 🔮 Future ML Enhancements (Phase 2: Expand ML Pipeline)
 
@@ -356,12 +337,7 @@ For how the LLM should use these when doing model improvements, evaluation, or h
 - [ ] **Data freshness checks** - Alert when features are stale
 - [ ] **Missing feature detection** - Identify games with incomplete features
 
-## Interaction feature learnings (game-winner, iter 118–120)
-
-- **win_pct_diff_10 × context (rest_advantage, home_advantage):** Iterations 118 and 119 added `win_pct_diff_10_x_rest_advantage` and `win_pct_diff_10_x_home_advantage`; both regressed test accuracy. Reverting `win_pct_diff_10_x_home_advantage` (iter 120) restored baseline and improved to 0.6446. Existing `form_divergence_diff_x_home_advantage` and `net_rtg_diff_10_x_home_advantage` likely capture home/context signal; avoid further win_pct_diff_10 × context interactions. Prefer other interaction types (e.g. momentum × home_advantage, fg_pct × rest_advantage) or validation/split/SQLMesh levers.
-
 ## 📋 Remaining Data Gaps (Free Sources Only)
 
 1. [ ] **Historical betting odds** - Building daily via `nba_betting_odds` asset (long-term)
-2. [ ] **Advanced stats** - Calculate from existing data (Pace, OffRtg, DefRtg, eFG%, TS%)
-3. [ ] **Rest/travel data** - Calculate from schedule (back-to-backs, travel distance)
+2. [ ] **Travel distance** - Calculate from schedule (back-to-backs with travel are harder)

@@ -52,6 +52,7 @@ logs/
 ml_iteration/logs/
 ml_iteration/last_run.json
 ml_iteration/accuracy_history.json
+ml_iteration/archive_*/
 
 # Optimization flow (orchestrator runtime)
 optimization_flow/logs/
