@@ -57,6 +57,7 @@ game_features_fv = FeatureView(
         Field(name="away_injured_players_count", dtype=Int32),
         Field(name="away_has_key_injury", dtype=Bool),
         Field(name="injury_impact_diff", dtype=Float64),
+        Field(name="injury_advantage_home", dtype=Float64),
         Field(name="star_players_out_diff", dtype=Int32),
         Field(name="injury_impact_x_form_diff", dtype=Float64),
         Field(name="away_injury_x_form", dtype=Float64),

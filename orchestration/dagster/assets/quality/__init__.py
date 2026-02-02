@@ -3,8 +3,12 @@
 from pathlib import Path
 from dagster import asset
 
-# Check if Baselinr config exists before loading
+# Check if Baselinr config exists before loading (Docker /app or project-relative)
 config_path = Path("/app/configs/generated/baselinr/baselinr_config.yml")
+if not config_path.exists():
+    # Local dev: resolve from this file (orchestration/dagster/assets/quality) -> project root
+    _project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
+    config_path = _project_root / "configs" / "generated" / "baselinr" / "baselinr_config.yml"
 
 baselinr_defs = None
 quality_assets = []

@@ -1,37 +1,37 @@
 datasets:
-  # NBA Datasets
+  # NBA Datasets (raw_dev layer for Baselinr profiling)
   - name: nba_games
     source: postgres_warehouse
-    schema: nba
+    schema: raw_dev
     table: games
     contract: contracts/contracts/nba_games.yml
     owner: data-engineering@company.com
-    
+
   - name: nba_players
     source: postgres_warehouse
-    schema: nba
+    schema: raw_dev
     table: players
     contract: contracts/contracts/nba_players.yml
     owner: data-engineering@company.com
-    
+
   - name: nba_teams
     source: postgres_warehouse
-    schema: nba
+    schema: raw_dev
     table: teams
     contract: contracts/contracts/nba_teams.yml
     owner: data-engineering@company.com
-    
-  - name: nba_player_game_stats
+
+  - name: nba_boxscores
     source: postgres_warehouse
-    schema: nba
-    table: player_game_stats
-    contract: contracts/contracts/nba_player_game_stats.yml
+    schema: raw_dev
+    table: boxscores
+    contract: contracts/contracts/nba_boxscores.yml
     owner: data-engineering@company.com
-    
-  - name: nba_team_game_stats
+
+  - name: nba_team_boxscores
     source: postgres_warehouse
-    schema: nba
-    table: team_game_stats
-    contract: contracts/contracts/nba_team_game_stats.yml
+    schema: raw_dev
+    table: team_boxscores
+    contract: contracts/contracts/nba_team_boxscores.yml
     owner: data-engineering@company.com
 

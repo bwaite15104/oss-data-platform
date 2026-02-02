@@ -136,6 +136,24 @@ BEGIN
     END LOOP;
 END $$;
 
+-- Ensure team_boxscores has quarter columns in both raw and staging (dlt pipeline expects them per contract).
+-- dlt writes to dataset_staging (e.g. raw_dev_staging) first, then to dataset (raw_dev). Both need the columns.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'raw_dev' AND table_name = 'team_boxscores') THEN
+        ALTER TABLE raw_dev.team_boxscores ADD COLUMN IF NOT EXISTS q1_points bigint;
+        ALTER TABLE raw_dev.team_boxscores ADD COLUMN IF NOT EXISTS q2_points bigint;
+        ALTER TABLE raw_dev.team_boxscores ADD COLUMN IF NOT EXISTS q3_points bigint;
+        ALTER TABLE raw_dev.team_boxscores ADD COLUMN IF NOT EXISTS q4_points bigint;
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'raw_dev_staging' AND table_name = 'team_boxscores') THEN
+        ALTER TABLE raw_dev_staging.team_boxscores ADD COLUMN IF NOT EXISTS q1_points bigint;
+        ALTER TABLE raw_dev_staging.team_boxscores ADD COLUMN IF NOT EXISTS q2_points bigint;
+        ALTER TABLE raw_dev_staging.team_boxscores ADD COLUMN IF NOT EXISTS q3_points bigint;
+        ALTER TABLE raw_dev_staging.team_boxscores ADD COLUMN IF NOT EXISTS q4_points bigint;
+    END IF;
+END $$;
+
 -- Grant permissions
 DO $$
 DECLARE

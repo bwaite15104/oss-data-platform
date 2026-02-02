@@ -215,10 +215,10 @@ def nba_teams_resource() -> Iterator[Dict[str, Any]]:
         
         for game_date in game_dates:
             for game in game_date.get("games", []):
-                # Process home team
+                # Process home team (only include NBA teams to avoid duplicate team_abbreviation from international/exhibition teams)
                 home_team = game.get("homeTeam", {})
                 team_id = home_team.get("teamId")
-                if team_id and team_id not in teams_seen:
+                if team_id and team_id not in teams_seen and team_id in TEAM_DIVISIONS:
                     teams_seen.add(team_id)
                     teams_data[team_id] = {
                         "team_id": team_id,
@@ -234,7 +234,7 @@ def nba_teams_resource() -> Iterator[Dict[str, Any]]:
                 # Process away team
                 away_team = game.get("awayTeam", {})
                 team_id = away_team.get("teamId")
-                if team_id and team_id not in teams_seen:
+                if team_id and team_id not in teams_seen and team_id in TEAM_DIVISIONS:
                     teams_seen.add(team_id)
                     teams_data[team_id] = {
                         "team_id": team_id,
@@ -247,7 +247,7 @@ def nba_teams_resource() -> Iterator[Dict[str, Any]]:
                         "created_at": datetime.now().isoformat(),
                     }
         
-        logger.info(f"Found {len(teams_data)} unique teams")
+        logger.info(f"Found {len(teams_data)} unique NBA teams (non-NBA schedule teams excluded)")
         
         for team in teams_data.values():
             logger.info(f"  Yielding team: {team['city']} {team['team_name']}")
@@ -824,6 +824,24 @@ def nba_team_boxscores_resource(
                     team = game.get(team_type, {})
                     is_home = team_type == "homeTeam"
                     
+                    # Extract quarter scores from periods array
+                    q1_points = 0
+                    q2_points = 0
+                    q3_points = 0
+                    q4_points = 0
+                    periods = team.get("periods", [])
+                    for period in periods:
+                        period_num = period.get("period", 0)
+                        period_score = period.get("score", 0) or 0
+                        if period_num == 1:
+                            q1_points = period_score
+                        elif period_num == 2:
+                            q2_points = period_score
+                        elif period_num == 3:
+                            q3_points = period_score
+                        elif period_num == 4:
+                            q4_points = period_score
+                    
                     # Aggregate player stats for team totals
                     team_totals = {
                         "points": 0, "assists": 0, "rebounds_total": 0,
@@ -875,6 +893,10 @@ def nba_team_boxscores_resource(
                         "free_throws_made": team_totals["free_throws_made"],
                         "free_throws_attempted": team_totals["free_throws_attempted"],
                         "free_throw_pct": round(ft_pct, 1),
+                        "q1_points": q1_points,
+                        "q2_points": q2_points,
+                        "q3_points": q3_points,
+                        "q4_points": q4_points,
                         "created_at": datetime.now().isoformat(),
                     }
                     

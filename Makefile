@@ -75,7 +75,7 @@ validate:
 	python tools/validate_odcs.py
 
 docker-up:
-	docker-compose up -d
+	docker-compose $(if $(wildcard .env),--env-file .env,) up -d
 
 docker-down:
 	docker-compose down

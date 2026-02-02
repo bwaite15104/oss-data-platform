@@ -56,7 +56,89 @@ For detailed context, reference these docs in `.cursor/docs/`:
 | `ingestion.md` | Adding new data sources, dlt pipelines |
 | `database.md` | Schema structure, tables, useful queries |
 | `ml-features.md` | ML model features, betting predictions |
+| `mlflow-and-feast-context.md` | Model improvements, validating training/eval, understanding model and feature history |
 | `commands.md` | Full list of make commands, docker ops |
+| `sqlmesh-performance-optimization.md` | Slow materializations, incremental models, indexing, chunked backfill |
+| `sqlmesh-troubleshooting-quick-reference.md` | Quick diagnosis and fixes for slow SQLMesh models |
+| `game-features-backfill-strategy.md` | Partial vs full backfill when adding columns to game features |
+
+## SQLMesh and Table Operational Best Practices
+
+**When creating or modifying SQLMesh models and tables, the LLM MUST follow these operational best practices so materializations stay fast and maintainable.**
+
+### 1. Prefer Incremental Refreshes for Large or Time-Series Data
+
+- **Use `kind INCREMENTAL_BY_TIME_RANGE`** (with `time_column`, `start`, `cron`, `batch_size`) for models that:
+  - Are time-series (e.g. game_date, created_at)
+  - Would otherwise scan or join over full history (e.g. rolling stats, lookups)
+  - Are large enough that a full refresh is slow (>5 min) or risky (temp space, timeouts)
+- **Avoid `kind FULL`** for such models unless the dataset is small and will stay small.
+- **Use `kind VIEW`** when the model is a simple projection over another model (e.g. `features_dev.game_features` over `marts.mart_game_features`) so there is no separate materialization to backfill.
+
+**Reference:** `.cursor/docs/sqlmesh-performance-optimization.md` for conversion patterns and examples.
+
+### 2. Indexing
+
+**CRITICAL: Indexes must be created for ALL base tables, not just SQLMesh snapshots.**
+
+- **Base tables (raw_dev, staging, etc.)**: 
+  - **ODCS contracts define indexes** in `contracts/schemas/*.yml` files (e.g., `nba_games.yml` has an `indexes:` section).
+  - **Ensure indexes are created** when tables are first created. Run `python scripts/ensure_contract_indexes.py` to create all indexes defined in contracts. If DLT/ODCS doesn't automatically create indexes from contracts, add them manually via migration scripts or `storage/postgres/init.sql`.
+  - **Common index patterns**: Create indexes on `game_id`, `team_id`, `player_id`, `game_date`, and composite indexes like `(team_id, game_date DESC)` for time-series queries.
+  - **After adding indexes**, run `ANALYZE <schema>.<table>` to update query planner statistics.
+- **SQLMesh snapshot tables**:
+  - **Dagster path**: When materializing via Dagster assets, `create_indexes_for_sqlmesh_snapshot` runs automatically after each model (see `orchestration/dagster/assets/transformation/sqlmesh_transforms.py`).
+  - **Direct sqlmesh plan path**: When running `sqlmesh plan` directly (e.g. `scripts/backfill_all_models_chunked.py`), indexes are **NOT** created by SQLMesh. You **must** either: (1) run `python scripts/create_sqlmesh_indexes.py` after materialization, or (2) use the chunked backfill script (it runs the index script after each chunk by default; do **not** use `--no-create-indexes` unless you have a reason). Without indexes, queries do sequential scans and can take 30+ minutes per model.
+- **If snapshot tables already exist without indexes**: Run `python scripts/create_sqlmesh_indexes.py` once (locally or `docker exec ... python /app/scripts/create_sqlmesh_indexes.py`) to create indexes on all existing snapshot tables.
+- **Staging views**: Note that `staging.stg_*` tables are often **views** (e.g., `stg_games` is a view over `raw_dev.games`). Index the underlying base tables in `raw_dev`, not the views themselves.
+- **Check for missing indexes** when materializations are slow: `python scripts/db_query.py "SELECT indexname FROM pg_indexes WHERE schemaname = '<schema>'"`. Add indexes on join and time columns, then run `ANALYZE <schema>.<table>`.
+
+**Reference:** `.cursor/docs/sqlmesh-troubleshooting-quick-reference.md` (index creation examples).
+
+### 3. Avoid Query Patterns That Cause Slow Materializations
+
+- **Avoid range joins over full history** (e.g. joining all prior rows per entity without a time bound). Prefer:
+  - **INCREMENTAL_BY_TIME_RANGE** so each chunk only processes a time window (`@start_ds` / `@end_ds`), and
+  - **LATERAL joins or window functions within that chunk** (e.g. “latest previous row” per game in one year).
+- **Avoid unbounded LATERAL/CROSS JOIN** over the full table. If you need “latest previous record” per row, either:
+  - Pre-compute a **lookup table** (incremental, chunked by time) and join to it, or
+  - Make the model **incremental** and use LATERAL only within the current interval.
+- **Monitor temp space** when testing: large `pg_stat_database.temp_bytes` or long runtimes indicate inefficient patterns. See `.cursor/docs/sqlmesh-performance-optimization.md` for diagnosis.
+
+### 4. Chunked Backfill When There Are Known Speed Limitations
+
+- **If a model is incremental but needs full-history backfill**, provide or use a **chunked backfill** (e.g. by year or 2-year windows) so that:
+  - Progress is visible (chunk by chunk).
+  - Failures are isolated to one chunk and can be retried or skipped.
+  - Temp space and runtime stay bounded per chunk.
+- **Use existing scripts** where they apply:
+  - `scripts/backfill_incremental_chunked.py <model>` for any INCREMENTAL_BY_TIME_RANGE model (full or custom range).
+  - `scripts/backfill_game_features_range.py` for partial backfill of `marts.mart_game_features` (e.g. after adding a column; default last 5 years).
+- **When adding a new incremental model** that may need full-history backfill, add or document a chunked backfill approach (e.g. in `.cursor/docs/` or a script similar to `backfill_incremental_chunked.py`).
+
+**Reference:** `.cursor/docs/game-features-backfill-strategy.md`, `.cursor/docs/lookup-table-chunked-backfill.md`.
+
+### 5. Checklist for New or Heavily Modified Tables/Models
+
+Before considering a new or heavily modified SQLMesh model complete, the LLM should ensure:
+
+- [ ] **Model kind** is appropriate: INCREMENTAL_BY_TIME_RANGE for large/time-series, VIEW for simple projections, FULL only if small and not time-series.
+- [ ] **Indexes** exist (or are created by the asset) on join and time columns; run `ANALYZE` after adding indexes.
+- [ ] **Query pattern** does not rely on unbounded range joins or full-table LATERAL over the whole history; use chunking or a lookup table if needed.
+- [ ] **Chunked backfill** is available or documented if the model is incremental and may need full or partial backfill (e.g. after adding columns).
+- [ ] **Docs** in `.cursor/docs/` are updated if you introduce a new backfill script or a new performance pattern (e.g. in `sqlmesh-performance-optimization.md` or `sqlmesh-troubleshooting-quick-reference.md`).
+
+**Reference:** `.cursor/docs/sqlmesh-performance-optimization.md`, `.cursor/docs/sqlmesh-troubleshooting-quick-reference.md`.
+
+---
+
+## Model and Feature Context: Use MLflow + Feast
+
+**For model-related work (improvements, evaluation, historical review), the LLM must use:**
+- **MLflow** (http://localhost:5000) as the source of truth for model state: runs, params, metrics, artifacts (`training_artifacts/features.json`, `feature_importances.json`), and Model Registry `game_winner_model`.
+- **Feast** / **`feature_repo/`** (`features.py`, `data_sources.py`) and Feast UI (http://localhost:8080) as the source of truth for current feature definitions and schema.
+
+**Do not rely only on chat context** for "which features were used," "what was the last test_accuracy," or "what we changed last"—query MLflow and inspect `feature_repo/` instead. See `.cursor/docs/mlflow-and-feast-context.md` for how to inspect MLflow (UI + `MlflowClient`) and Feast, and for validation steps.
 
 ## Code Locations
 - `ingestion/dlt/pipelines/` - dlt data pipelines
@@ -222,6 +304,25 @@ python scripts/db_query.py "SELECT count(*) FROM staging_dev.<table>"
 python scripts/db_query.py "SELECT count(*) FROM marts_dev.<table>"
 ```
 
+#### New/Modified ML Training or Model Changes
+**After creating/modifying ML training assets, feature sets, or model config, LLM must run:**
+```bash
+# 1. Run training via Dagster
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select train_game_winner_model
+
+# 2. Verify in MLflow (UI http://localhost:5000 or MlflowClient): new run in nba_game_winner_prediction,
+#    params (features_part*, top_features, feature_count, algorithm), metrics (test_accuracy, train_accuracy),
+#    artifacts (training_artifacts/features.json, feature_importances.json), Model Registry game_winner_model
+
+# 3. Verify feature alignment: feature_repo/features.py and data_sources.py match sources used in
+#    orchestration/dagster/assets/ml/training.py (marts + intermediate views)
+
+# 4. If needed, run predictions and spot-check ml_dev.predictions
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select generate_game_predictions
+python scripts/db_query.py "SELECT * FROM ml_dev.predictions ORDER BY created_at DESC LIMIT 5"
+```
+See `.cursor/docs/mlflow-and-feast-context.md` for detailed MLflow/Feast usage and validation.
+
 ### LLM Validation Checklist (Must Complete Automatically)
 
 **The LLM MUST automatically verify these items after making changes (using run_terminal_cmd):**
@@ -289,6 +390,7 @@ contracts/schemas/           contracts/contracts/
 | New contracts/schemas | `contracts.md` |
 | New assets/pipelines | `ingestion.md`, `architecture.md` |
 | ML features/models | `ml-features.md` |
+| New SQLMesh models / slow tables / backfill scripts | `sqlmesh-performance-optimization.md`, `sqlmesh-troubleshooting-quick-reference.md`, `game-features-backfill-strategy.md` as needed |
 | Config changes | `commands.md` (env vars), relevant doc |
 
 **Checklist after significant changes:**

@@ -116,7 +116,7 @@ class BaselinrAdapter(ConfigAdapter):
                     defaults = {
                         "POSTGRES_PORT": "5432",
                         "POSTGRES_HOST": "localhost",
-                        "POSTGRES_DB": "oss_data_platform",
+                        "POSTGRES_DB": "nba_analytics",
                         "POSTGRES_USER": "postgres",
                         "POSTGRES_PASSWORD": "postgres",
                         "BASELINR_STORAGE_PORT": "5433",

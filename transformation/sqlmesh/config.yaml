@@ -7,6 +7,8 @@ gateways:
       user: postgres
       password: postgres
       database: nba_analytics
+      # Reduce concurrent tasks to avoid race conditions during virtual layer updates
+      concurrent_tasks: 1
       # Increase statement timeout for large materializations (30 minutes)
       # Note: PostgreSQL uses milliseconds, but SQLMesh may handle this differently
 
@@ -15,6 +17,10 @@ default_gateway: local
 model_defaults:
   dialect: postgres
   start: '2010-10-01'  # Start from 15 years ago to include more historical data for training
+
+# Physical table naming: use hash_md5 so names stay under PostgreSQL's 63-char identifier limit
+# (long model names like int_team_home_away_splits_by_opponent_quality exceed the limit with schema_and_table)
+physical_table_naming_convention: hash_md5
 
 # Physical schema mapping
 physical_schema_mapping:

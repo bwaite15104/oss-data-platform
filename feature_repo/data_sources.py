@@ -64,6 +64,7 @@ game_features_source = PostgreSQLSource(
             away_injured_players_count,
             away_has_key_injury,
             injury_impact_diff,
+            injury_advantage_home,
             star_players_out_diff,
             -- Feature interactions
             injury_impact_x_form_diff,

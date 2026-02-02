@@ -107,6 +107,26 @@ columns:
     nullable: true
     description: Team free throw percentage
     
+  - name: q1_points
+    type: integer
+    nullable: true
+    description: Points scored in first quarter
+    
+  - name: q2_points
+    type: integer
+    nullable: true
+    description: Points scored in second quarter
+    
+  - name: q3_points
+    type: integer
+    nullable: true
+    description: Points scored in third quarter
+    
+  - name: q4_points
+    type: integer
+    nullable: true
+    description: Points scored in fourth quarter
+    
   - name: created_at
     type: timestamp
     nullable: false

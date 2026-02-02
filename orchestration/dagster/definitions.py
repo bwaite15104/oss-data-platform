@@ -4,7 +4,7 @@ Dagster definitions for OSS Data Platform.
 This file loads asset definitions generated from ODCS contracts.
 """
 
-from dagster import Definitions, load_assets_from_modules
+from dagster import Definitions, in_process_executor, load_assets_from_modules
 
 from orchestration.dagster.assets import ingestion, transformation, quality, ml
 from orchestration.dagster.schedules import schedules, jobs
@@ -42,10 +42,14 @@ if hasattr(quality, 'baselinr_defs') and quality.baselinr_defs:
 # Enable via CLI: dagster sensor start -f definitions.py default_automation_condition_sensor
 # Or via UI: Settings > Automation > Enable for code location
 
+# Default executor: in-process (serial) to avoid Docker OOM/CPU overload when
+# materializing many assets (e.g. group:transformations). Override via run config
+# if needed: execution.config.multiprocess.max_concurrent: 2
 defs = Definitions(
     assets=all_assets,
     resources=resources if resources else None,
     jobs=jobs,  # Empty list - no jobs needed with declarative automation
     schedules=schedules,  # Empty list - no schedules needed with declarative automation
+    executor=in_process_executor,
 )
 

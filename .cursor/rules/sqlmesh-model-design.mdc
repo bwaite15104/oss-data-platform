@@ -1,0 +1,48 @@
+---
+description: SQLMesh model design patterns to prevent performance issues
+globs: "**/transformation/sqlmesh/models/**/*.sql"
+alwaysApply: false
+---
+
+# SQLMesh Model Design Guidelines
+
+## Avoid "Mega Models" (>10 JOINs)
+
+Models with too many JOINs are difficult to backfill and maintain. If a model needs data from many upstream sources, split it into feature groups first.
+
+```sql
+-- ❌ BAD: 50+ JOINs in one model
+SELECT ...
+FROM table1
+LEFT JOIN table2 ON ...
+LEFT JOIN table3 ON ...
+-- ... 47 more joins
+LEFT JOIN table50 ON ...
+
+-- ✅ GOOD: Create intermediate feature groups, then join groups
+-- Step 1: Create int_feature_group_a.sql (joins 5-10 related models)
+-- Step 2: Create int_feature_group_b.sql (joins 5-10 related models)
+-- Step 3: Final model joins only the groups
+SELECT *
+FROM int_feature_group_a a
+LEFT JOIN int_feature_group_b b ON b.game_id = a.game_id
+LEFT JOIN int_feature_group_c c ON c.game_id = a.game_id
+```
+
+## Guidelines
+
+1. **Max 10-15 JOINs per model** - Split larger aggregations into feature groups
+2. **Group by domain** - Combine related features (e.g., all "rest day" features in one group)
+3. **Incremental batch size** - Use `batch_size 30-90` for groups, not `batch_size 1`
+4. **Each group = one Dagster asset** - Add exports to `__init__.py` for observability
+
+## When Creating Feature Aggregation Models
+
+Before creating a model that aggregates many upstream models:
+
+1. Count the JOINs - if >10, split into groups first
+2. Group related features by domain (rest, h2h, opponent quality, etc.)
+3. Create each group as a separate INCREMENTAL model
+4. Create the final model that joins only the groups
+5. Add Dagster assets for each group in `sqlmesh_transforms.py`
+6. Export new assets from `__init__.py`

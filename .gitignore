@@ -48,6 +48,16 @@ configs/generated/
 *.log
 logs/
 
+# ML iteration (orchestrator runtime)
+ml_iteration/logs/
+ml_iteration/last_run.json
+ml_iteration/accuracy_history.json
+
+# Optimization flow (orchestrator runtime)
+optimization_flow/logs/
+optimization_flow/optimization_state.json
+optimization_flow/last_fix.json
+
 # OS
 .DS_Store
 Thumbs.db
@@ -67,6 +77,7 @@ catalog/datahub/data/
 
 # Dagster
 dagster_home/
+.tmp_dagster_home_*/
 *.db
 # Dagster run storage and compute logs (runtime artifacts)
 orchestration/dagster/storage/
@@ -76,10 +87,16 @@ orchestration/dagster/logs/
 .sqlmesh/
 transformation/sqlmesh/.cache/
 
-# ML Models (trained model files)
-models/
+# ML Models (trained model files - in root models/ directory, not sqlmesh)
+/models/
 *.pkl
 *.joblib
+
+# ML training artifacts
+catboost_info/
+
+# Bad pip install artifacts (from malformed pip commands)
+=*
 
 # Airbyte
 ingestion/airbyte/.env
@@ -99,8 +116,12 @@ scripts/setup_*.ps1
 scripts/setup_*.sh
 scripts/run_*.py
 
-# Cursor docs (temporary notes)
+# Cursor docs and config files (user-specific)
 .cursor/docs/
+.cursor/*.json
 
 # Chrome driver
 chromedriver.zip
+
+# Local installation scripts
+cursor_install.sh

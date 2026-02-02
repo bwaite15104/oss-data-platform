@@ -197,6 +197,9 @@ Examples:
 
   # Run from Docker container
   docker exec nba_analytics_dagster_webserver python /app/scripts/sqlmesh_backfill.py marts.mart_game_features
+
+  # Chunked backfill (year-by-year) for lookup table - use full-history start
+  python scripts/sqlmesh_backfill.py intermediate.int_team_rolling_stats_lookup --start 1946-11-01
         """
     )
     

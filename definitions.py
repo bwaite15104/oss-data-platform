@@ -13,7 +13,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "orchestration" / "dagster"))
 
-from dagster import Definitions, load_assets_from_modules
+from dagster import Definitions, in_process_executor, load_assets_from_modules
 
 # Import asset modules
 from orchestration.dagster.assets import ingestion, transformation, quality, ml
@@ -39,9 +39,13 @@ if hasattr(quality, 'baselinr_defs') and quality.baselinr_defs:
         elif isinstance(baselinr_resources, dict):
             resources.update(baselinr_resources)
 
+# Default executor: in-process (serial) to avoid Docker OOM/CPU overload when
+# materializing many assets (e.g. group:transformations). Override via run config
+# if needed: execution.config.multiprocess.max_concurrent: 2
 defs = Definitions(
     assets=all_assets,
     resources=resources if resources else None,
     jobs=jobs,
     schedules=schedules,
+    executor=in_process_executor,
 )

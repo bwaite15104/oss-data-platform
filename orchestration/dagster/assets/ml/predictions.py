@@ -30,6 +30,7 @@ class PredictionConfig(Config):
     min_confidence: float = Field(default=0.5, description="Minimum confidence threshold for predictions")
     model_version: Optional[str] = Field(default=None, description="Model version to use (uses latest if None)")
     prediction_date_cutoff: Optional[str] = Field(default=None, description="Date cutoff for predictions (YYYY-MM-DD). None = CURRENT_DATE (production). Set to past date for backtesting.")
+    prediction_date_end: Optional[str] = Field(default=None, description="For backtesting: end date inclusive (YYYY-MM-DD). When set with prediction_date_cutoff, predict all completed games in [cutoff, end].")
 
 
 @asset(
@@ -54,12 +55,16 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         import psycopg2
         from psycopg2.extras import RealDictCursor
         import pandas as pd
+        import numpy as np
         import joblib
+        import tempfile
+        import shutil
         from datetime import datetime
         import json
         try:
             import mlflow
             import mlflow.xgboost
+            import mlflow.artifacts
             MLFLOW_AVAILABLE = True
         except ImportError:
             MLFLOW_AVAILABLE = False
@@ -119,12 +124,17 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         mlflow_tracking_uri = hyperparams.get('mlflow_tracking_uri', os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
         
         # Try to load model from MLflow first, fall back to local file
+        algo = (hyperparams.get("algorithm") or "xgboost").lower()
         model = None
         if MLFLOW_AVAILABLE and mlflow_run_id:
             try:
                 mlflow.set_tracking_uri(mlflow_tracking_uri)
                 context.log.info(f"Loading model {model_version} from MLflow (run_id: {mlflow_run_id})")
-                model = mlflow.xgboost.load_model(f"runs:/{mlflow_run_id}/model")
+                if algo == "lightgbm":
+                    import mlflow.lightgbm
+                    model = mlflow.lightgbm.load_model(f"runs:/{mlflow_run_id}/model")
+                else:
+                    model = mlflow.xgboost.load_model(f"runs:/{mlflow_run_id}/model")
                 context.log.info("Successfully loaded model from MLflow")
             except Exception as e:
                 context.log.warning(f"Failed to load model from MLflow: {e}. Falling back to local file.")
@@ -154,6 +164,29 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
             context.log.info(f"Loading model {model_version} from {model_path}")
             model = joblib.load(model_path)
         
+        # Load calibrator if present (apply before injury heuristic)
+        # Supports both isotonic regression and Platt scaling calibration methods
+        calibrator = None
+        calibration_method = hyperparams.get("calibration", "isotonic")  # Default to isotonic for backward compatibility
+        cal_path = hyperparams.get("calibrator_path")
+        if cal_path and Path(cal_path).exists():
+            try:
+                calibrator = joblib.load(cal_path)
+                context.log.info(f"Loaded {calibration_method} calibrator from {cal_path}")
+            except Exception as e:
+                context.log.warning(f"Could not load calibrator from {cal_path}: {e}")
+        elif MLFLOW_AVAILABLE and mlflow_run_id and calibration_method in ["isotonic", "platt_scaling"]:
+            try:
+                td = tempfile.mkdtemp(prefix="mlflow_cal_")
+                dl = mlflow.artifacts.download_artifacts(artifact_uri=f"runs:/{mlflow_run_id}/calibrator.pkl", dst_path=td)
+                p = dl if os.path.isfile(dl) else os.path.join(dl, "calibrator.pkl")
+                if os.path.isfile(p):
+                    calibrator = joblib.load(p)
+                    context.log.info(f"Loaded {calibration_method} calibrator from MLflow run artifacts")
+                shutil.rmtree(td, ignore_errors=True)
+            except Exception as e:
+                context.log.warning(f"Could not load calibrator from MLflow: {e}")
+        
         # Determine date cutoff for predictions
         is_backtesting = config.prediction_date_cutoff is not None
         if is_backtesting:
@@ -166,10 +199,18 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         # Load features for games to predict
         context.log.info("Loading features for games to predict...")
         
-        # Build query - for backtesting, predict all games on/after the date
+        # Build query - for backtesting, predict all games on/after the date (or in range)
         # For production, only predict games without scores (future games)
-        if is_backtesting:
-            # Backtesting: predict games on the specified date (regardless of score status)
+        if is_backtesting and config.prediction_date_end:
+            # Backtest range: all completed games in [cutoff, end]
+            date_filter = (
+                f"gf.game_date::date >= '{date_cutoff}'::date "
+                f"AND gf.game_date::date <= '{config.prediction_date_end}'::date "
+                f"AND gf.home_score IS NOT NULL AND gf.away_score IS NOT NULL"
+            )
+            context.log.info(f"Backtesting range: predicting completed games from {date_cutoff} through {config.prediction_date_end}")
+        elif is_backtesting:
+            # Backtesting single day: predict games on the specified date (regardless of score status)
             date_filter = f"gf.game_date::date = '{date_cutoff}'::date"
             context.log.info(f"Backtesting: predicting games on {date_cutoff}")
         else:
@@ -198,6 +239,7 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
                 -- Feature differences
                 gf.ppg_diff_5,
                 gf.win_pct_diff_5,
+                gf.fg_pct_diff_5,
                 gf.ppg_diff_10,
                 gf.win_pct_diff_10,
                 -- Season-level features
@@ -233,7 +275,7 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
                 gf.away_injury_impact_score,
                 gf.away_injured_players_count,
                 gf.away_has_key_injury,
-                gf.injury_impact_diff,
+                gf.injury_advantage_home,
                 gf.star_players_out_diff,
                 -- Feature interactions: Injury impact with other key features
                 gf.injury_impact_x_form_diff,
@@ -241,7 +283,7 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
                 gf.home_injury_x_form,
                 gf.home_injury_impact_ratio,
                 gf.away_injury_impact_ratio,
-                -- Explicit injury penalty features (v3 - fixed encoding)
+                -- Explicit injury penalty features (v4 - continuous, stronger)
                 gf.home_injury_penalty_severe,
                 gf.away_injury_penalty_severe,
                 gf.home_injury_penalty_absolute,
@@ -274,8 +316,8 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
                 COALESCE(mf.home_home_win_pct, 0.5) AS home_home_win_pct,
                 COALESCE(mf.away_road_win_pct, 0.5) AS away_road_win_pct,
                 COALESCE(mf.home_advantage, 0) AS home_advantage
-            FROM marts__local.mart_game_features gf
-            LEFT JOIN intermediate__local.int_game_momentum_features mf ON mf.game_id = gf.game_id
+            FROM marts.mart_game_features gf
+            LEFT JOIN intermediate.int_game_momentum_features mf ON mf.game_id = gf.game_id
             WHERE {date_filter}
             ORDER BY gf.game_date
         """
@@ -292,6 +334,21 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         
         context.log.info(f"Found {len(df)} games to predict")
         
+        # Compute Python-computed interaction features (must match training pipeline)
+        # fg_pct_diff_5 × rest_advantage (iteration 122) - shooting efficiency × rest; hot shooting when rested
+        if 'fg_pct_diff_5' in df.columns and 'rest_advantage' in df.columns:
+            df['fg_pct_diff_5_x_rest_advantage'] = df['fg_pct_diff_5'].fillna(0) * df['rest_advantage'].fillna(0)
+        
+        # For backtest range, avoid duplicate rows when re-running: remove existing predictions for this model and these games
+        if is_backtesting and config.prediction_date_end and len(df) > 0:
+            gids = [str(row['game_id']) for _, row in df.iterrows()]
+            if gids:
+                cursor.execute(
+                    "DELETE FROM ml_dev.predictions WHERE model_id = %s AND game_id IN %s",
+                    (model_id, tuple(gids)),
+                )
+                context.log.info(f"Cleared {cursor.rowcount} existing backtest predictions for this model and date range")
+        
         # Prepare features (match training feature columns)
         X_pred = df[feature_cols].fillna(0)
         
@@ -301,15 +358,15 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
         
         # Confidence calibration: reduce confidence when injury impact ratios are extreme
         # This helps flag uncertain predictions when injuries significantly impact team strength
-        def calibrate_confidence(base_confidence, home_ratio, away_ratio, injury_diff):
+        def calibrate_confidence(base_confidence, home_ratio, away_ratio, injury_advantage_home):
             """
             Reduce confidence when injury impact ratios are extreme.
             
             Args:
                 base_confidence: Raw model confidence (0-1)
                 home_ratio: home_injury_impact_ratio
-                away_ratio: away_injury_impact_ratio  
-                injury_diff: injury_impact_diff (absolute value)
+                away_ratio: away_injury_impact_ratio
+                injury_advantage_home: injury_advantage_home (|value| = injury diff magnitude)
             
             Returns:
                 Calibrated confidence (0-1)
@@ -318,7 +375,7 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
             
             # Penalize extreme injury impact ratios (>20 = injury is 20x team's form)
             # Higher ratio = more uncertainty
-            max_ratio = max(abs(home_ratio) if pd.notna(home_ratio) else 0, 
+            max_ratio = max(abs(home_ratio) if pd.notna(home_ratio) else 0,
                           abs(away_ratio) if pd.notna(away_ratio) else 0)
             
             if max_ratio > 20:
@@ -330,10 +387,11 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
                 penalty = (max_ratio - 10) / 50  # 0.2 penalty at ratio=20
                 calibrated = calibrated * (1 - penalty)
             
-            # Also penalize very large absolute injury impact differences (>1000)
-            # This indicates one team is significantly more injured
-            if abs(injury_diff) > 1000:
-                additional_penalty = min(0.15, (abs(injury_diff) - 1000) / 10000)
+            # Also penalize very large absolute injury advantage (>1000)
+            # Indicates one team is significantly more injured
+            adv_abs = abs(injury_advantage_home) if pd.notna(injury_advantage_home) else 0
+            if adv_abs > 1000:
+                additional_penalty = min(0.15, (adv_abs - 1000) / 10000)
                 calibrated = calibrated * (1 - additional_penalty)
             
             return max(0.1, min(1.0, calibrated))  # Clamp between 0.1 and 1.0
@@ -344,29 +402,38 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
             game_id = row['game_id']
             pred_value = int(predictions[idx])
             base_confidence = float(max(probabilities[idx]))  # Max probability
+            if calibrator is not None:
+                # Apply calibration based on method (isotonic or Platt scaling)
+                calibration_method = hyperparams.get("calibration", "isotonic")
+                if calibration_method == "platt_scaling":
+                    # Platt scaling: transform to log-odds, apply logistic regression, get calibrated probability
+                    logit_proba = np.log(base_confidence / (1 - base_confidence + 1e-10))
+                    calibrated_proba = calibrator.predict_proba([[logit_proba]])[0, 1]
+                    base_confidence = float(np.clip(calibrated_proba, 0.0, 1.0))
+                else:
+                    # Isotonic regression (default)
+                    base_confidence = float(np.clip(calibrator.predict([[base_confidence]])[0], 0.0, 1.0))
             
-            # Get injury impact ratios for calibration
+            # Get injury impact ratios and advantage for heuristic calibration
             home_ratio = row.get('home_injury_impact_ratio', 0) if 'home_injury_impact_ratio' in row else 0
             away_ratio = row.get('away_injury_impact_ratio', 0) if 'away_injury_impact_ratio' in row else 0
-            injury_diff = row.get('injury_impact_diff', 0) if 'injury_impact_diff' in row else 0
+            injury_adv = row.get('injury_advantage_home', 0) if 'injury_advantage_home' in row else 0
             
-            # Calibrate confidence
             home_ratio_val = float(home_ratio) if pd.notna(home_ratio) else 0.0
             away_ratio_val = float(away_ratio) if pd.notna(away_ratio) else 0.0
-            injury_diff_val = float(injury_diff) if pd.notna(injury_diff) else 0.0
+            injury_adv_val = float(injury_adv) if pd.notna(injury_adv) else 0.0
             
             confidence = calibrate_confidence(
                 base_confidence,
                 home_ratio_val,
                 away_ratio_val,
-                injury_diff_val
+                injury_adv_val
             )
             
-            # Log significant calibrations for debugging
             if abs(base_confidence - confidence) > 0.1:
                 context.log.debug(
                     f"Game {game_id}: Confidence calibrated from {base_confidence:.3f} to {confidence:.3f} "
-                    f"(home_ratio={home_ratio_val:.2f}, away_ratio={away_ratio_val:.2f}, injury_diff={injury_diff_val:.2f})"
+                    f"(home_ratio={home_ratio_val:.2f}, away_ratio={away_ratio_val:.2f}, injury_advantage_home={injury_adv_val:.2f})"
                 )
             
             # Only insert if confidence meets threshold (use base confidence for threshold check, 

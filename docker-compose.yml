@@ -42,6 +42,8 @@ services:
       - oss_data_platform
 
   # Dagster Webserver
+  # Optional: add deploy.resources.limits (e.g. memory: 4G) if the container
+  # overwhelms the host; see .cursor/docs/dagster-issues-and-fixes.md §8
   dagster_webserver:
     build:
       context: .
@@ -87,7 +89,8 @@ services:
     networks:
       - oss_data_platform
 
-  # Dagster Daemon
+  # Dagster Daemon (runs sensors/schedules; also executes runs when using default run launcher)
+  # Optional: add deploy.resources.limits if needed; see .cursor/docs/dagster-issues-and-fixes.md §8
   dagster_daemon:
     build:
       context: .
@@ -267,7 +270,7 @@ services:
       --host 0.0.0.0
       --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db
-      --default-artifact-root file:///mlflow/artifacts
+      --artifacts-destination /mlflow/artifacts
     networks:
       - oss_data_platform
 

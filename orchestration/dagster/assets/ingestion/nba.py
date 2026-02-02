@@ -32,12 +32,9 @@ from ingestion.dlt.pipelines.nba_stats import (
 from ingestion.dlt.pipelines.nba_injuries import nba_injuries_resource
 from ingestion.dlt.config import DATASET_NAME, PIPELINE_NAME, DESTINATION
 
-# Optional: Import historical backfill (only if needed)
-try:
-    from ingestion.dlt.pipelines.nba_historical_backfill import nba_historical_backfill
-    HISTORICAL_BACKFILL_AVAILABLE = True
-except ImportError:
-    HISTORICAL_BACKFILL_AVAILABLE = False
+# Historical backfill is imported lazily inside nba_historical_backfill() only when that asset runs.
+# This avoids loading basketball-reference-scraper (and Selenium) when running other ingestion assets,
+# which would otherwise trigger Chrome/session errors in Docker for every worker.
 
 
 class NBAIngestionConfig(Config):
@@ -529,12 +526,6 @@ def nba_historical_backfill(context, config: HistoricalBackfillConfig) -> dict:
         team: Optional team abbreviation (e.g., "LAL") - if None, processes all teams
         limit: Optional limit on number of games (for testing)
     """
-    if not HISTORICAL_BACKFILL_AVAILABLE:
-        raise ImportError(
-            "basketball-reference-scraper not available. "
-            "Install with: pip install basketball-reference-scraper"
-        )
-    
     context.log.info(f"Starting historical backfill for season {config.season}...")
     if config.team:
         context.log.info(f"Processing team: {config.team}")
@@ -561,7 +552,13 @@ def nba_historical_backfill(context, config: HistoricalBackfillConfig) -> dict:
     
     try:
         from ingestion.dlt.pipelines.nba_historical_backfill import nba_historical_backfill as historical_backfill_source
-        
+    except ImportError as e:
+        raise ImportError(
+            "basketball-reference-scraper not available. "
+            "Install with: pip install basketball-reference-scraper"
+        ) from e
+
+    try:
         load_info = pipeline.run(
             historical_backfill_source(
                 season=config.season,
