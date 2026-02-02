@@ -1,0 +1,58 @@
+---
+description: Automatic validation workflow after making changes to assets, pipelines, or database
+globs: "**/orchestration/**/*.py,**/ingestion/**/*.py,**/transformation/**/*.sql"
+alwaysApply: false
+---
+
+# Validation Workflow
+
+After making ANY change to assets, jobs, pipelines, schemas, or tables, automatically validate using these commands.
+
+## Quick Validation
+
+```bash
+# 1. Run the asset/job
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <asset_name>
+
+# 2. Verify data loaded
+python scripts/db_query.py "SELECT count(*) FROM <schema>.<table>"
+python scripts/db_query.py "SELECT * FROM <schema>.<table> LIMIT 5"
+
+# 3. Check for success indicators
+# Look for: "RUN_SUCCESS" or "LOADED and contains no failed jobs"
+```
+
+## By Change Type
+
+### New/Modified Asset
+```bash
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select <asset_name>
+python scripts/db_query.py "SELECT count(*) FROM raw_dev.<table>"
+```
+
+### SQLMesh Model Changes
+```bash
+make sqlmesh-plan
+make sqlmesh-run
+python scripts/db_query.py "SELECT count(*) FROM <schema>.<table>"
+```
+
+### Schema/Database Changes
+```bash
+python scripts/db_query.py --schemas
+python scripts/db_query.py --tables raw_dev
+python scripts/db_query.py "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '<schema>' AND table_name = '<table>'"
+```
+
+### ML Training/Model Changes
+```bash
+docker exec nba_analytics_dagster_webserver dagster asset materialize -f /app/definitions.py --select train_game_winner_model
+# Check MLflow UI: http://localhost:5000 for new run, metrics, artifacts
+```
+
+## If Validation Fails
+
+1. Identify the issue from terminal output
+2. Fix the problem
+3. Re-run validation commands
+4. Only proceed once all validations pass

@@ -1,74 +1,44 @@
-# Cursor Documentation Guide
+# Cursor Documentation
 
-This directory contains project context documentation for AI assistants (Cursor, Copilot, etc.).
+Project context documentation for AI assistants.
 
-## Documentation Structure
+## Core Documentation
 
-| File | Purpose | Update When |
-|------|---------|-------------|
-| `architecture.md` | System design, data flow diagrams | Architecture changes |
-| `commands.md` | Make commands, CLI usage, env vars | New commands added |
-| `contracts.md` | ODCS schema definitions, type mappings | Schema changes |
-| `database.md` | DB schema, tables, queries | Schema/table changes |
-| `ingestion.md` | Data sources, dlt pipelines | New data sources |
-| `ml-features.md` | ML features, model ideas | ML work |
+| Doc | Purpose |
+|-----|---------|
+| `architecture.md` | System design, data flow |
+| `commands.md` | Make commands, CLI usage |
+| `contracts.md` | ODCS schema definitions |
+| `database.md` | DB schema, tables, queries |
+| `ingestion.md` | Data sources, dlt pipelines |
+| `ml-features.md` | ML features, model training |
+| `mlflow-and-feast-context.md` | Model/feature tracking |
+| `sqlmesh-guide.md` | SQLMesh performance & troubleshooting |
 
-## Maintenance Rules
+## Cursor Rules
 
-### When to Update Docs
+Rules in `.cursor/rules/` provide actionable patterns:
 
-1. **Database Changes** → Update `database.md`
-   - New schemas created
-   - New tables added
-   - Column changes
-   - Query examples
+| Rule | Trigger |
+|------|---------|
+| `sqlmesh-model-design.mdc` | SQLMesh model files |
+| `validation-workflow.mdc` | Asset/pipeline changes |
+| `documentation-maintenance.mdc` | Documentation updates |
 
-2. **New Commands** → Update `commands.md`
-   - New make targets
-   - New CLI commands
-   - Environment variable changes
+## Quick Reference
 
-3. **New Data Sources** → Update `ingestion.md`
-   - New CDN endpoints
-   - New dlt resources
-   - New Dagster assets
+- **Dagster UI**: http://localhost:3000
+- **MLflow UI**: http://localhost:5000
+- **Feast UI**: http://localhost:8080
+- **PostgreSQL**: localhost:5432 (postgres/postgres/nba_analytics)
 
-4. **Schema Changes** → Update `contracts.md`
-   - New ODCS contracts
-   - Type mapping changes
-   - Contract loader changes
+## When to Update
 
-5. **Architecture Changes** → Update `architecture.md`
-   - New services added
-   - Data flow changes
-   - Tool stack changes
-
-### Also Update `.cursorrules`
-
-The root `.cursorrules` file should be updated when:
-- Quick reference info changes (URLs, credentials)
-- Key commands change
-- New important code locations added
-
-## Doc Format Guidelines
-
-1. **Keep it scannable** - Use tables, headers, code blocks
-2. **Show examples** - Real commands, real queries
-3. **Stay current** - Outdated docs are worse than none
-4. **Be specific** - Include actual values, not placeholders
-
-## Verification
-
-After updating docs, verify they're accurate:
-
-```bash
-# Test commands work
-make db-counts
-make db-schemas
-
-# Verify queries work
-python scripts/db_query.py "SELECT 1"
-
-# Check service URLs respond
-curl -s http://localhost:3000 > /dev/null && echo "Dagster OK"
-```
+| Change | Update |
+|--------|--------|
+| Database schema | `database.md` |
+| New commands | `commands.md` |
+| Data sources | `ingestion.md` |
+| Contracts | `contracts.md` |
+| ML features | `ml-features.md` |
+| SQLMesh patterns | `sqlmesh-guide.md` |

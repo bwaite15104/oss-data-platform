@@ -116,8 +116,7 @@ scripts/setup_*.ps1
 scripts/setup_*.sh
 scripts/run_*.py
 
-# Cursor docs and config files (user-specific)
-.cursor/docs/
+# Cursor config files (user-specific, not docs)
 .cursor/*.json
 
 # Chrome driver

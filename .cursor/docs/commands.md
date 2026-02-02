@@ -34,7 +34,7 @@ make db-psql           # Open psql shell to nba_analytics
 ### Configuration
 ```bash
 make compose-contracts # Compose contracts from schemas + quality rules
-make generate-configs  # Generate tool configs from ODCS
+make generate-configs  # Generate tool configs from ODCS (Baselinr uses nba_analytics, raw_dev tables)
 make validate          # Validate ODCS configs
 ```
 

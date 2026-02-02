@@ -1,0 +1,48 @@
+---
+description: Guidelines for keeping documentation in sync with code changes
+globs: "**/*.md,**/contracts/**/*.yml,**/configs/**/*.yml"
+alwaysApply: false
+---
+
+# Documentation Maintenance
+
+Keep documentation in sync with reality. Outdated docs are worse than no docs.
+
+## When to Update Docs
+
+| Change Type | Update |
+|-------------|--------|
+| Database schema | `.cursor/docs/database.md` |
+| New make commands | `.cursor/docs/commands.md` |
+| New data sources | `.cursor/docs/ingestion.md` |
+| New contracts/schemas | `.cursor/docs/contracts.md` |
+| ML features/models | `.cursor/docs/ml-features.md` |
+| SQLMesh patterns | `.cursor/docs/sqlmesh-guide.md` |
+| Architecture changes | `.cursor/docs/architecture.md` |
+
+## Contract Workflow
+
+After ANY change to `contracts/schemas/*.yml`:
+
+```bash
+make compose-contracts
+ls contracts/contracts/  # Verify generated
+```
+
+## Doc Format Guidelines
+
+1. **Keep it scannable** - Use tables, headers, code blocks
+2. **Show examples** - Real commands, real queries
+3. **Be specific** - Include actual values, not placeholders
+4. **Stay current** - Update when code changes
+
+## Verification
+
+```bash
+# Test commands work
+make db-counts
+make db-schemas
+
+# Verify queries work
+python scripts/db_query.py "SELECT 1"
+```
