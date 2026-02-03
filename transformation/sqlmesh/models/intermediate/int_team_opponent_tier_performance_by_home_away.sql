@@ -1,5 +1,5 @@
 MODEL (
-  name intermediate.int_team_opp_tier_perf_home_away,
+  name intermediate.int_team_opp_tier_ha,
   description 'Opponent tier performance by home/away. Short name for Postgres 63-char limit.',
   kind INCREMENTAL_BY_TIME_RANGE (
     time_column game_date

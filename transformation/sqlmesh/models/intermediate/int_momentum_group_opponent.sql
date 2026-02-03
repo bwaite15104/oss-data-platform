@@ -30,7 +30,7 @@ opponent_tier_performance AS NOT MATERIALIZED (
 ),
 
 opponent_tier_by_home_away AS NOT MATERIALIZED (
-  SELECT o.* FROM intermediate.int_team_opp_tier_perf_home_away o 
+  SELECT o.* FROM intermediate.int_team_opp_tier_ha o 
   INNER JOIN games_chunk gc ON gc.game_id = o.game_id
 ),
 

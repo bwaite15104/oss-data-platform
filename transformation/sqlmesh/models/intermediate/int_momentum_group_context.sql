@@ -45,7 +45,7 @@ blowout_performance AS NOT MATERIALIZED (
 ),
 
 comeback_closeout_performance AS NOT MATERIALIZED (
-  SELECT c.* FROM intermediate.int_team_comeback_closeout_perf c 
+  SELECT c.* FROM intermediate.int_team_cb_closeout_perf c 
   INNER JOIN games_chunk gc ON gc.game_id = c.game_id
 ),
 

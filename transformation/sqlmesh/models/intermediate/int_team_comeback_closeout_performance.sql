@@ -1,8 +1,9 @@
 MODEL (
-  name intermediate.int_team_comeback_closeout_perf,
+  name intermediate.int_team_cb_closeout_perf,
   description 'Comeback/closeout performance. Short name for Postgres 63-char limit.',
   kind INCREMENTAL_BY_TIME_RANGE (
-    time_column game_date
+    time_column game_date,
+    batch_size 30  -- 30 days per batch to reduce per-run overhead
   ),
   start '1946-11-01',  -- Updated for full history backfill,
   grains [

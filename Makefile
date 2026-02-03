@@ -96,6 +96,10 @@ db-psql:
 db-query:
 	@echo "Usage: python scripts/db_query.py \"SELECT * FROM raw_dev.teams LIMIT 5\""
 
+# Index raw_dev.games for SQLMesh intermediate model performance (run after ingestion)
+db-index-games:
+	docker exec nba_analytics_dagster_webserver python /app/scripts/ensure_raw_dev_games_indexes.py
+
 # Transformation & Feature Store (SQLMesh)
 SQLMESH = $(LOCALAPPDATA)/Programs/Python/Python312/Scripts/sqlmesh.exe
 

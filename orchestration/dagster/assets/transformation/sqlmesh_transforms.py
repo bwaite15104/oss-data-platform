@@ -11,6 +11,7 @@ Each SQLMesh model is represented as an individual Dagster asset for better obse
 """
 
 import os
+import re
 import subprocess
 import logging
 from pathlib import Path
@@ -24,6 +25,8 @@ from dagster import (
     MetadataValue,
     RetryPolicy,
     AutomationCondition,
+    DailyPartitionsDefinition,
+    BackfillPolicy,
 )
 from pydantic import BaseModel
 
@@ -38,6 +41,28 @@ from orchestration.dagster.assets.ingestion.nba import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Daily partitions for transformation assets (2010-01-01 for downstream training)
+TRANSFORMATION_DAILY_PARTITIONS = DailyPartitionsDefinition(start_date="2010-01-01")
+
+# Bundle N partitions per run to limit parallelism and avoid overwhelming Docker
+TRANSFORMATION_BACKFILL_POLICY = BackfillPolicy.multi_run(max_partitions_per_run=30)
+
+
+def _get_plan_date_range(context: AssetExecutionContext) -> tuple[str, str]:
+    """Get (plan_start_date, plan_end_date) from context - supports single partition or multi-run range."""
+    if hasattr(context, "partition_keys") and context.partition_keys:
+        # BackfillPolicy.multi_run: one run covers multiple partitions
+        start_date = min(context.partition_keys)
+        end_date = (
+            datetime.strptime(max(context.partition_keys), "%Y-%m-%d") + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        return start_date, end_date
+    # Single partition
+    pk = context.partition_key
+    end_date = (datetime.strptime(pk, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    return pk, end_date
+
 
 # SQLMesh project path
 SQLMESH_PROJECT_PATH = Path(__file__).parent.parent.parent.parent.parent / "transformation" / "sqlmesh"
@@ -136,21 +161,34 @@ def get_blocking_locks(conn) -> List[Dict[str, Any]]:
 
 
 def get_table_row_count(conn, schema: str, table: str) -> Optional[int]:
-    """Get approximate row count for a table."""
-    try:
-        cur = conn.cursor()
-        cur.execute(f"""
-            SELECT reltuples::bigint AS estimate
-            FROM pg_class
-            WHERE relname = '{table}'
-            AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = '{schema}');
-        """)
-        result = cur.fetchone()
-        cur.close()
-        return int(result[0]) if result and result[0] else None
-    except Exception as e:
-        logger.warning(f"Could not get row count for {schema}.{table}: {e}")
-        return None
+    """Get approximate row count for a table. Tries schema__local as fallback (SQLMesh dev env)."""
+    schemas_to_try = [schema]
+    if schema in ("intermediate", "marts", "features_dev"):
+        schemas_to_try.append(f"{schema}__local")
+    for s in schemas_to_try:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT reltuples::bigint AS estimate
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relname = %s AND n.nspname = %s
+            """, (table, s))
+            result = cur.fetchone()
+            cur.close()
+            if result and result[0] is not None and result[0] >= 0:
+                return int(result[0])
+            if result and result[0] == -1:
+                # Stats not run; use exact COUNT(*)
+                cur = conn.cursor()
+                cur.execute(f'SELECT COUNT(*) FROM "{s}"."{table}"')
+                cnt = cur.fetchone()[0]
+                cur.close()
+                return int(cnt)
+        except Exception as e:
+            logger.debug(f"Could not get row count for {s}.{table}: {e}")
+            continue
+    return None
 
 
 def create_indexes_for_sqlmesh_snapshot(
@@ -228,6 +266,12 @@ def create_indexes_for_sqlmesh_snapshot(
                 (f"idx_{snapshot_table_name}_game_id", "(game_id)"),
                 (f"idx_{snapshot_table_name}_game_date", "(game_date)"),
             ]
+        elif 'cb_closeout_perf' in model_short or 'clutch_perf' in model_short or 'blowout_perf' in model_short or 'ot_perf' in model_short or '4q_perf' in model_short:
+            # Game-level models: game_id for joins, game_date for range queries
+            indexes = [
+                (f"idx_{snapshot_table_name}_game_id", "(game_id)"),
+                (f"idx_{snapshot_table_name}_game_date", "(game_date)"),
+            ]
         else:
             # Default: try to find common join columns
             cur.execute(f"""
@@ -285,7 +329,7 @@ def execute_sqlmesh_plan_for_model(
     context: AssetExecutionContext,
     model_name: str,
     config: SQLMeshConfig
-) -> Dict[str, Any]:
+) -> None:
     """Execute SQLMesh plan for a specific model and return results with monitoring."""
     start_time = datetime.now()
     
@@ -406,17 +450,37 @@ def execute_sqlmesh_plan_for_model(
         os.chdir(original_dir)
         
         # Check results
+        output = result.stdout or ""
+        output += result.stderr or ""
         if result.returncode != 0:
-            error_msg = result.stderr or result.stdout
-            context.log.error(f"SQLMesh plan failed for {model_name}: {error_msg}")
-            
-            # Log any remaining locks or queries
-            if blocking_locks_after:
-                context.log.error(f"Blocking locks detected after failure: {blocking_locks_after}")
-            
-            raise RuntimeError(f"SQLMesh plan failed for {model_name} with return code {result.returncode}: {error_msg}")
+            # If we reached "Updating virtual layer", model batches completed (VL runs after batches)
+            batches_executed = (
+                "Model batches executed" in output
+                or "Executing model batches" in output
+                or "Updating virtual layer" in output
+            )
+            virtual_layer_failed = "Updating virtual layer" in output and "Execution failed for node" in output
+            # Check if the failed node is OUR model (not a downstream like game_features)
+            failed_node_match = re.search(r"Execution failed for node\s+(SnapshotId<[^>]+>|[^\n]+)", output)
+            our_table = model_name.split(".")[-1]  # e.g. int_team_clutch_perf
+            failed_node_mentions_our_model = (
+                bool(failed_node_match) and our_table in (failed_node_match.group(1) or "")
+            )
+            # Same logic as backfill_incremental_chunked.py: if our data was written but virtual
+            # layer failed on a different model (race from concurrent plans), treat as success.
+            if batches_executed and virtual_layer_failed and not failed_node_mentions_our_model:
+                context.log.warning(
+                    f"SQLMesh virtual layer update failed for a different model (likely concurrent plan race), "
+                    f"but {model_name} data was materialized successfully. State may reconcile on next plan."
+                )
+                # Fall through to return success
+            else:
+                context.log.error(f"SQLMesh plan failed for {model_name}: {output[:2000]}")
+                if blocking_locks_after:
+                    context.log.error(f"Blocking locks detected after failure: {blocking_locks_after}")
+                raise RuntimeError(f"SQLMesh plan failed for {model_name} with return code {result.returncode}: {output[:500]}")
         
-        output = result.stdout
+        output = result.stdout or ""
         context.log.info(f"SQLMesh plan completed for {model_name} in {duration:.2f}s")
         
         # Extract metadata from output
@@ -469,12 +533,15 @@ def execute_sqlmesh_plan_for_model(
     group_name="transformations",
     description="Materialize intermediate.int_team_rolling_stats - Team rolling statistics (last 5 and 10 games)",
     deps=[nba_team_boxscores, nba_games],  # Depends on team boxscores and games data
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_rolling_stats(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_team_rolling_stats(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_team_rolling_stats model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_rolling_stats", config)
     
     # Get table row count and create indexes for performance
@@ -501,20 +568,22 @@ def int_team_rolling_stats(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_roll_lkp - Pre-computed lookup table for latest rolling stats before each game",
     deps=[int_team_rolling_stats, nba_games],  # Depends on rolling stats and games
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_rolling_stats_lookup(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize intermediate.int_team_roll_lkp (incremental by game_date, year-by-year chunks)."""
-    # Use full-history start so backfill processes all yearly intervals; model has batch_size=1 for one year per job
-    config = SQLMeshConfig(backfill=True, backfill_start_date="1946-11-01")
+def int_team_rolling_stats_lookup(context: AssetExecutionContext) -> None:
+    """Materialize intermediate.int_team_roll_lkp - one partition = one day."""
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_roll_lkp", config)
     
     # Get table row count and create indexes for performance
@@ -541,19 +610,22 @@ def int_team_rolling_stats_lookup(context: AssetExecutionContext) -> Dict[str, A
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_season_stats - Team season aggregated statistics",
     deps=[nba_team_boxscores, nba_games],  # Depends on team boxscores and games data
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_season_stats(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_team_season_stats(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_team_season_stats model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_season_stats", config)
     
     # Get table row count for metadata
@@ -574,19 +646,22 @@ def int_team_season_stats(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_star_players - Identifies star players (top players by PPG)",
     deps=[nba_boxscores],  # Depends on player boxscores data
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_star_players(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_star_players(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_star_players model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_star_players", config)
     
     # Get table row count and create indexes for performance
@@ -613,19 +688,22 @@ def int_star_players(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_star_player_avail - Star player game availability",
     deps=[int_star_players, nba_boxscores],  # Depends on star players and boxscores
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_star_player_availability(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_star_player_availability(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_star_player_avail model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_star_player_avail", config)
     
     # Get table row count for metadata
@@ -646,19 +724,22 @@ def int_star_player_availability(context: AssetExecutionContext) -> Dict[str, An
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_game_injury_features - Injury impact features by game (VIEW)",
     deps=[int_star_players, nba_games, nba_injuries, nba_boxscores],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_game_injury_features(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_game_injury_features(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_game_injury_features model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_game_injury_features", config)
 
     conn = get_postgres_connection()
@@ -676,19 +757,22 @@ def int_game_injury_features(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
 
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_star_feats - Team-level star player features",
     deps=[int_star_player_availability],  # View over star player availability only
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_star_player_features(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_team_star_player_features(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_team_star_feats model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_star_feats", config)
     
     # Get table row count for metadata
@@ -709,19 +793,22 @@ def int_team_star_player_features(context: AssetExecutionContext) -> Dict[str, A
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_streaks - Team win/loss streaks",
     deps=[nba_games],  # Depends on games data
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_streaks(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_team_streaks(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_team_streaks model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_streaks", config)
     
     # Get table row count for metadata
@@ -742,19 +829,22 @@ def int_team_streaks(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_rest_days - Team rest days and back-to-back flags",
     deps=[nba_games],  # Depends on games data
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_rest_days(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_team_rest_days(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_team_rest_days model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_rest_days", config)
     
     # Get table row count for metadata
@@ -775,19 +865,22 @@ def int_team_rest_days(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_h2h_stats - Head-to-head historical stats between teams",
     deps=[nba_games],  # Depends on games data
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_h2h_stats(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_team_h2h_stats(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_team_h2h_stats model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_h2h_stats", config)
     
     # Get table row count for metadata
@@ -805,19 +898,22 @@ def int_team_h2h_stats(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_opponent_quality - Average win % of recent opponents",
     deps=[nba_games, int_team_season_stats],  # Depends on games and season stats
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_opponent_quality(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_team_opponent_quality(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_team_opponent_quality model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_opponent_quality", config)
     
     # Get table row count for metadata
@@ -835,24 +931,22 @@ def int_team_opponent_quality(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
-    description="Materialize intermediate.int_away_upset_tend - Away team upset tendency (INCREMENTAL, needs backfill)",
+    description="Materialize intermediate.int_away_upset_tend - Away team upset tendency (INCREMENTAL)",
     deps=[int_team_season_stats, int_team_rolling_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_away_team_upset_tendency(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize intermediate.int_away_upset_tend (incremental by game_date).
-    Uses last-30-day plan range to leverage existing backfill. Full backfill: run
-    backfill_incremental_chunked.py intermediate.int_away_upset_tend."""
-    today = datetime.now().date()
-    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")  # SQLMesh rejects end date in the future
-    config = SQLMeshConfig(backfill=True, backfill_start_date=start_date, plan_start_date=start_date, plan_end_date=end_date)
+def int_away_team_upset_tendency(context: AssetExecutionContext) -> None:
+    """Materialize intermediate.int_away_upset_tend - one partition = one day."""
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_away_upset_tend", config)
 
     conn = get_postgres_connection()
@@ -870,19 +964,22 @@ def int_away_team_upset_tendency(context: AssetExecutionContext) -> Dict[str, An
     finally:
         conn.close()
 
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_home_road_perf - Team performance at home vs on the road",
     deps=[nba_games],  # Depends on games data
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_team_home_road_performance(context: AssetExecutionContext) -> Dict[str, Any]:
+def int_team_home_road_performance(context: AssetExecutionContext) -> None:
     """Materialize intermediate.int_team_home_road_perf model with monitoring."""
-    config = SQLMeshConfig()
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_team_home_road_perf", config)
     
     # Get table row count for metadata
@@ -900,7 +997,489 @@ def int_team_home_road_performance(context: AssetExecutionContext) -> Dict[str, 
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
+
+
+# =============================================================================
+# MOMENTUM UPSTREAM MODELS - Individual models that feed into the 5 groups
+# =============================================================================
+# Each can be run individually in Dagster for observability and selective backfill.
+
+def _make_momentum_upstream_asset(model_name: str, description: str, deps: list):
+    """Factory for momentum upstream assets - supports multi-run (N partitions per run)."""
+    def _impl(context: AssetExecutionContext) -> None:
+        start_date, end_date = _get_plan_date_range(context)
+        config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
+        result = execute_sqlmesh_plan_for_model(context, model_name, config)
+        conn = get_postgres_connection()
+        try:
+            row_count = get_table_row_count(conn, "intermediate", model_name.split(".")[-1])
+            indexes_created = create_indexes_for_sqlmesh_snapshot(conn, "intermediate", model_name)
+            context.add_output_metadata({
+                "duration_seconds": MetadataValue.float(result["duration_seconds"]),
+                "row_count": MetadataValue.int(row_count) if row_count is not None else MetadataValue.text("N/A"),
+                "indexes_created": MetadataValue.int(len(indexes_created)),
+            })
+        finally:
+            conn.close()
+        return None  # Opt out of IO manager so multi-partition backfills work
+    return _impl
+
+# Basic group upstreams (5 new - int_team_streaks, int_team_rest_days already exist)
+int_team_cumulative_fatigue = asset(
+    name="int_team_cumulative_fatigue",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_cum_fatigue - Cumulative fatigue per team",
+    deps=[int_team_rest_days, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_cum_fatigue", "Cumulative fatigue", []))
+
+int_team_weighted_momentum = asset(
+    name="int_team_weighted_momentum",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_weighted_momentum - Weighted momentum",
+    deps=[int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_weighted_momentum", "Weighted momentum", []))
+
+int_team_win_streak_quality = asset(
+    name="int_team_win_streak_quality",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_streak_qual - Win streak quality",
+    deps=[int_team_streaks, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_streak_qual", "Win streak quality", []))
+
+int_team_contextualized_streaks = asset(
+    name="int_team_contextualized_streaks",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_ctx_streaks - Contextualized streaks",
+    deps=[int_team_streaks, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_ctx_streaks", "Contextualized streaks", []))
+
+int_team_recent_momentum_exponential = asset(
+    name="int_team_recent_momentum_exponential",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_recent_mom_exp - Exponential momentum",
+    deps=[int_team_rolling_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_recent_mom_exp", "Exponential momentum", []))
+
+# H2H group upstreams (2 new - int_team_h2h_stats already exists)
+int_team_rivalry_indicators = asset(
+    name="int_team_rivalry_indicators",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_rivalry_ind - Rivalry indicators",
+    deps=[int_team_h2h_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_rivalry_ind", "Rivalry indicators", []))
+
+int_team_opponent_specific_performance = asset(
+    name="int_team_opponent_specific_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_opp_specific_perf - Opponent-specific performance",
+    deps=[int_team_h2h_stats, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_opp_specific_perf", "Opponent-specific perf", []))
+
+# Opponent group upstreams (7 new - int_team_opponent_quality already exists)
+int_team_opponent_tier_performance = asset(
+    name="int_team_opponent_tier_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_opp_tier_perf - Opponent tier performance",
+    deps=[int_team_opponent_quality, int_team_rolling_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_opp_tier_perf", "Opponent tier perf", []))
+
+int_team_opponent_tier_performance_by_home_away = asset(
+    name="int_team_opponent_tier_performance_by_home_away",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_opp_tier_ha - Tier perf by home/away",
+    deps=[int_team_opponent_tier_performance, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_opp_tier_ha", "Tier perf home/away", []))
+
+int_team_performance_vs_opponent_quality_by_rest = asset(
+    name="int_team_performance_vs_opponent_quality_by_rest",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_vs_opp_qual_rest - Perf vs opp quality by rest",
+    deps=[int_team_opponent_quality, int_team_rest_days, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_vs_opp_qual_rest", "Perf vs opp qual rest", []))
+
+int_team_performance_vs_similar_quality = asset(
+    name="int_team_performance_vs_similar_quality",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_vs_similar_qual - Perf vs similar quality",
+    deps=[int_team_opponent_quality, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_vs_similar_qual", "Perf vs similar qual", []))
+
+int_team_quality_adjusted_performance = asset(
+    name="int_team_quality_adjusted_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_quality_adj_perf - Quality-adjusted performance",
+    deps=[int_team_opponent_quality, int_team_rolling_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_quality_adj_perf", "Quality-adj perf", []))
+
+int_team_opponent_similarity_performance = asset(
+    name="int_team_opponent_similarity_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_opp_similarity_perf - Opponent similarity perf",
+    deps=[int_team_opponent_quality, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_opp_similarity_perf", "Opp similarity perf", []))
+
+int_team_recent_performance_weighted_by_opponent_quality = asset(
+    name="int_team_recent_performance_weighted_by_opponent_quality",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_recent_perf_wt_opp_qual - Recent perf weighted by opp",
+    deps=[int_team_opponent_quality, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_recent_perf_wt_opp_qual", "Recent perf wt opp", []))
+
+# Context group upstreams (13 new - int_team_home_road_performance already exists)
+int_team_home_away_opp_qual = asset(
+    name="int_team_home_away_opp_qual",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_home_away_opp_qual - Home/away splits by opp quality",
+    deps=[int_team_home_road_performance, int_team_opponent_quality, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_home_away_opp_qual", "Home/away opp qual", []))
+
+int_team_home_away_rest_performance = asset(
+    name="int_team_home_away_rest_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_home_away_rest_perf - Home/away rest performance",
+    deps=[int_team_rest_days, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_home_away_rest_perf", "Home/away rest perf", []))
+
+int_team_clutch_performance = asset(
+    name="int_team_clutch_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_clutch_perf - Clutch performance",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_clutch_perf", "Clutch perf", []))
+
+int_team_blowout_performance = asset(
+    name="int_team_blowout_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_blowout_perf - Blowout performance",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_blowout_perf", "Blowout perf", []))
+
+int_team_comeback_closeout_performance = asset(
+    name="int_team_comeback_closeout_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_cb_closeout_perf - Comeback/closeout perf",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_cb_closeout_perf", "Comeback closeout", []))
+
+int_team_overtime_performance = asset(
+    name="int_team_overtime_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_ot_perf - Overtime performance",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_ot_perf", "Overtime perf", []))
+
+int_team_fourth_quarter_performance = asset(
+    name="int_team_fourth_quarter_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_4q_perf - Fourth quarter performance",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_4q_perf", "4th quarter perf", []))
+
+int_team_game_outcome_quality = asset(
+    name="int_team_game_outcome_quality",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_outcome_qual - Game outcome quality",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_outcome_qual", "Outcome quality", []))
+
+int_team_upset_resistance = asset(
+    name="int_team_upset_resistance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_upset_resistance - Upset resistance",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_upset_resistance", "Upset resistance", []))
+
+int_team_favored_underdog_performance = asset(
+    name="int_team_favored_underdog_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_favored_underdog_perf - Favored/underdog perf",
+    deps=[int_team_rolling_stats_lookup, int_team_season_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_favored_underdog_perf", "Favored underdog", []))
+
+int_team_recent_road_performance = asset(
+    name="int_team_recent_road_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_road_perf - Recent road performance",
+    deps=[int_team_rolling_stats_lookup, int_team_home_road_performance, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_road_perf", "Road perf", []))
+
+int_team_season_timing_performance = asset(
+    name="int_team_season_timing_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_timing_perf - Season timing performance",
+    deps=[int_team_rolling_stats, int_team_season_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_timing_perf", "Season timing", []))
+
+int_team_playoff_race_context = asset(
+    name="int_team_playoff_race_context",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_playoff_ctx - Playoff race context",
+    deps=[int_team_season_stats, int_team_rolling_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_playoff_ctx", "Playoff context", []))
+
+# Trends group upstreams (14 new)
+int_team_form_divergence = asset(
+    name="int_team_form_divergence",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_form_divergence - Form divergence",
+    deps=[int_team_rolling_stats, int_team_season_stats, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_form_divergence", "Form divergence", []))
+
+int_team_performance_trends = asset(
+    name="int_team_performance_trends",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_trends - Performance trends",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_trends", "Perf trends", []))
+
+int_team_recent_momentum = asset(
+    name="int_team_recent_momentum",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_recent_momentum - Recent momentum",
+    deps=[int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_recent_momentum", "Recent momentum", []))
+
+int_team_momentum_acceleration = asset(
+    name="int_team_momentum_acceleration",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_mom_accel - Momentum acceleration",
+    deps=[int_team_recent_momentum, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_mom_accel", "Momentum accel", []))
+
+int_team_performance_acceleration = asset(
+    name="int_team_performance_acceleration",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_accel - Performance acceleration",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_accel", "Perf accel", []))
+
+int_team_recent_form_trend = asset(
+    name="int_team_recent_form_trend",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_recent_form_trend - Recent form trend",
+    deps=[int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_recent_form_trend", "Recent form", []))
+
+int_team_performance_consistency = asset(
+    name="int_team_performance_consistency",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_consistency - Performance consistency",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_consistency", "Perf consistency", []))
+
+int_team_matchup_style_performance = asset(
+    name="int_team_matchup_style_performance",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_matchup_perf - Matchup style performance",
+    deps=[int_team_rolling_stats_lookup, int_team_opponent_quality, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_matchup_perf", "Matchup style", []))
+
+int_team_performance_vs_similar_momentum = asset(
+    name="int_team_performance_vs_similar_momentum",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_vs_similar_mom - Perf vs similar momentum",
+    deps=[int_team_recent_momentum, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_vs_similar_mom", "Perf vs similar mom", []))
+
+int_team_performance_vs_similar_rest_context = asset(
+    name="int_team_performance_vs_similar_rest_context",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_vs_rest_ctx - Perf vs rest context",
+    deps=[int_team_rest_days, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_vs_rest_ctx", "Perf vs rest ctx", []))
+
+int_team_performance_in_rest_advantage_scenarios = asset(
+    name="int_team_performance_in_rest_advantage_scenarios",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_rest_adv - Perf in rest advantage scenarios",
+    deps=[int_team_rest_days, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_rest_adv", "Rest advantage", []))
+
+int_team_performance_by_rest_combination = asset(
+    name="int_team_performance_by_rest_combination",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_by_rest_combo - Perf by rest combination",
+    deps=[int_team_rest_days, int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_by_rest_combo", "Rest combo", []))
+
+int_team_matchup_compatibility = asset(
+    name="int_team_matchup_compatibility",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_matchup_compat - Matchup compatibility",
+    deps=[int_team_matchup_style_performance, int_team_opponent_quality, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_matchup_compat", "Matchup compat", []))
+
+int_team_performance_by_pace_context = asset(
+    name="int_team_performance_by_pace_context",
+    group_name="transformations",
+    description="Materialize intermediate.int_team_perf_by_pace_ctx - Perf by pace context",
+    deps=[int_team_rolling_stats_lookup, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
+    automation_condition=AutomationCondition.eager(),
+    retry_policy=RetryPolicy(max_retries=2, delay=60),
+)(_make_momentum_upstream_asset("intermediate.int_team_perf_by_pace_ctx", "Pace context", []))
 
 
 # =============================================================================
@@ -913,19 +1492,20 @@ def int_team_home_road_performance(context: AssetExecutionContext) -> Dict[str, 
 @asset(
     group_name="transformations",
     description="Feature Group 1: Basic momentum (streaks, rest, fatigue, weighted momentum)",
-    deps=[int_team_streaks, int_team_rest_days, nba_games],
+    deps=[
+        int_team_streaks, int_team_rest_days,
+        int_team_cumulative_fatigue, int_team_weighted_momentum, int_team_win_streak_quality,
+        int_team_contextualized_streaks, int_team_recent_momentum_exponential,
+        nba_games,
+    ],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_momentum_group_basic(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize intermediate.int_momentum_group_basic - 7 upstream models aggregated.
-    
-    Includes: streaks, rest days, cumulative fatigue, weighted momentum, win streak quality,
-    contextualized streaks, exponential momentum.
-    """
-    today = datetime.now().date()
-    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+def int_momentum_group_basic(context: AssetExecutionContext) -> None:
+    """Materialize intermediate.int_momentum_group_basic - 7 upstream models aggregated."""
+    start_date, end_date = _get_plan_date_range(context)
     config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_momentum_group_basic", config)
     
@@ -938,24 +1518,21 @@ def int_momentum_group_basic(context: AssetExecutionContext) -> Dict[str, Any]:
         })
     finally:
         conn.close()
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Feature Group 2: Head-to-head and rivalry features",
-    deps=[int_team_h2h_stats, nba_games],
+    deps=[int_team_h2h_stats, int_team_rivalry_indicators, int_team_opponent_specific_performance, nba_games],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_momentum_group_h2h(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize intermediate.int_momentum_group_h2h - 3 upstream models aggregated.
-    
-    Includes: h2h stats, rivalry indicators, opponent-specific performance.
-    """
-    today = datetime.now().date()
-    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+def int_momentum_group_h2h(context: AssetExecutionContext) -> None:
+    """Materialize intermediate.int_momentum_group_h2h - 3 upstream models aggregated."""
+    start_date, end_date = _get_plan_date_range(context)
     config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_momentum_group_h2h", config)
     
@@ -968,24 +1545,28 @@ def int_momentum_group_h2h(context: AssetExecutionContext) -> Dict[str, Any]:
         })
     finally:
         conn.close()
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Feature Group 3: Opponent quality and tier performance features",
-    deps=[int_team_opponent_quality, int_team_season_stats, nba_games],
+    deps=[
+        int_team_opponent_quality, int_team_opponent_tier_performance,
+        int_team_opponent_tier_performance_by_home_away,
+        int_team_performance_vs_opponent_quality_by_rest, int_team_performance_vs_similar_quality,
+        int_team_quality_adjusted_performance, int_team_opponent_similarity_performance,
+        int_team_recent_performance_weighted_by_opponent_quality,
+        int_team_season_stats, nba_games,
+    ],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_momentum_group_opponent(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize intermediate.int_momentum_group_opponent - 8 upstream models aggregated.
-    
-    Includes: opponent quality, tier performance, quality-adjusted stats, similar opponents.
-    """
-    today = datetime.now().date()
-    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+def int_momentum_group_opponent(context: AssetExecutionContext) -> None:
+    """Materialize intermediate.int_momentum_group_opponent - 8 upstream models aggregated."""
+    start_date, end_date = _get_plan_date_range(context)
     config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_momentum_group_opponent", config)
     
@@ -998,25 +1579,28 @@ def int_momentum_group_opponent(context: AssetExecutionContext) -> Dict[str, Any
         })
     finally:
         conn.close()
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Feature Group 4: Game context (home/away, clutch, season timing, playoffs)",
-    deps=[int_team_home_road_performance, nba_games],
+    deps=[
+        int_team_home_road_performance, int_team_home_away_opp_qual, int_team_home_away_rest_performance,
+        int_team_clutch_performance, int_team_blowout_performance, int_team_comeback_closeout_performance,
+        int_team_overtime_performance, int_team_fourth_quarter_performance, int_team_game_outcome_quality,
+        int_team_upset_resistance, int_team_favored_underdog_performance, int_team_recent_road_performance,
+        int_team_season_timing_performance, int_team_playoff_race_context,
+        nba_games,
+    ],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_momentum_group_context(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize intermediate.int_momentum_group_context - 14 upstream models aggregated.
-    
-    Includes: home/road splits, clutch/blowout performance, overtime, fourth quarter,
-    favored/underdog, season timing, playoff race context.
-    """
-    today = datetime.now().date()
-    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+def int_momentum_group_context(context: AssetExecutionContext) -> None:
+    """Materialize intermediate.int_momentum_group_context - 14 upstream models aggregated."""
+    start_date, end_date = _get_plan_date_range(context)
     config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_momentum_group_context", config)
     
@@ -1029,25 +1613,29 @@ def int_momentum_group_context(context: AssetExecutionContext) -> Dict[str, Any]
         })
     finally:
         conn.close()
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Feature Group 5: Trends, acceleration, consistency, and matchup features",
-    deps=[int_team_rolling_stats, nba_games],
+    deps=[
+        int_team_form_divergence, int_team_performance_trends, int_team_recent_momentum,
+        int_team_momentum_acceleration, int_team_performance_acceleration, int_team_recent_form_trend,
+        int_team_performance_consistency, int_team_matchup_style_performance,
+        int_team_performance_vs_similar_momentum, int_team_performance_vs_similar_rest_context,
+        int_team_performance_in_rest_advantage_scenarios, int_team_performance_by_rest_combination,
+        int_team_matchup_compatibility, int_team_performance_by_pace_context,
+        int_team_rolling_stats, nba_games,
+    ],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_momentum_group_trends(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize intermediate.int_momentum_group_trends - 14 upstream models aggregated.
-    
-    Includes: form divergence, performance trends, momentum acceleration,
-    consistency, matchup style, pace context, rest scenarios.
-    """
-    today = datetime.now().date()
-    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+def int_momentum_group_trends(context: AssetExecutionContext) -> None:
+    """Materialize intermediate.int_momentum_group_trends - 14 upstream models aggregated."""
+    start_date, end_date = _get_plan_date_range(context)
     config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "intermediate.int_momentum_group_trends", config)
     
@@ -1060,7 +1648,7 @@ def int_momentum_group_trends(context: AssetExecutionContext) -> Dict[str, Any]:
         })
     finally:
         conn.close()
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 # =============================================================================
@@ -1071,27 +1659,14 @@ def int_momentum_group_trends(context: AssetExecutionContext) -> Dict[str, Any]:
     group_name="transformations",
     description="Materialize intermediate.int_game_momentum_features - Joins 5 pre-computed feature groups",
     deps=[int_momentum_group_basic, int_momentum_group_h2h, int_momentum_group_opponent, int_momentum_group_context, int_momentum_group_trends],
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def int_game_momentum_features(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize intermediate.int_game_momentum_features - now just joins 5 pre-computed groups.
-    
-    This model is now FAST because it joins 5 materialized group tables instead of 50+ individual models.
-    
-    FULL HISTORICAL BACKFILL: First backfill each of the 5 groups, then this model:
-    
-        # Backfill groups (can run in parallel)
-        docker exec nba_analytics_dagster_webserver python /app/scripts/backfill_incremental_chunked.py \\
-            intermediate.int_momentum_group_basic --start-year 2020 --chunk-days 90 --timeout 1800
-        
-        # After groups are done, backfill the combined model (fast)
-        docker exec nba_analytics_dagster_webserver python /app/scripts/backfill_incremental_chunked.py \\
-            intermediate.int_game_momentum_features --start-year 2020 --chunk-days 90 --timeout 600
-    """
-    today = datetime.now().date()
-    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")
+def int_game_momentum_features(context: AssetExecutionContext) -> None:
+    """Materialize intermediate.int_game_momentum_features - joins 5 pre-computed groups."""
+    start_date, end_date = _get_plan_date_range(context)
     config = SQLMeshConfig(
         plan_start_date=start_date,
         plan_end_date=end_date,
@@ -1117,7 +1692,7 @@ def int_game_momentum_features(context: AssetExecutionContext) -> Dict[str, Any]
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 # Feature Models - Materialized tables
@@ -1125,20 +1700,14 @@ def int_game_momentum_features(context: AssetExecutionContext) -> Dict[str, Any]
     group_name="transformations",
     description="Materialize features_dev.game_features - ML-ready game features for prediction models",
     deps=[int_team_rolling_stats_lookup, int_team_season_stats, int_star_player_availability, int_team_star_player_features, int_game_injury_features, int_away_team_upset_tendency, int_game_momentum_features, nba_games],  # Via mart_game_features: all upstream intermediates
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def game_features(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize features_dev.game_features model with monitoring.
-    Uses last-30-day plan range; SQLMesh skips already-materialized intervals.
-    
-    FULL HISTORICAL BACKFILL: Ensure int_game_momentum_features is backfilled first, then:
-        docker exec nba_analytics_dagster_webserver python /app/scripts/backfill_incremental_chunked.py \\
-            features_dev.game_features --start-year 2020 --end-year 2026 --chunk-days 30 --timeout 3600
-    """
-    today = datetime.now().date()
-    start_date = (today - timedelta(days=30)).strftime("%Y-%m-%d")
-    end_date = today.strftime("%Y-%m-%d")  # SQLMesh rejects end date in the future
+def game_features(context: AssetExecutionContext) -> None:
+    """Materialize features_dev.game_features - one partition = one day."""
+    start_date, end_date = _get_plan_date_range(context)
     config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "features_dev.game_features", config)
     
@@ -1166,19 +1735,22 @@ def game_features(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize features_dev.team_features - Team-level features",
     deps=[int_team_season_stats],  # Full model over season stats only
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def team_features(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize features_dev.team_features model with monitoring."""
-    config = SQLMeshConfig()
+def team_features(context: AssetExecutionContext) -> None:
+    """Materialize features_dev.team_features - one partition = one day."""
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "features_dev.team_features", config)
     
     # Get table row count for metadata
@@ -1199,19 +1771,22 @@ def team_features(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work
 
 
 @asset(
     group_name="transformations",
     description="Materialize features_dev.team_injury_features - Team injury features",
     deps=[nba_injuries],  # Depends on injuries data
+    partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
+    backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def team_injury_features(context: AssetExecutionContext) -> Dict[str, Any]:
-    """Materialize features_dev.team_injury_features model with monitoring."""
-    config = SQLMeshConfig()
+def team_injury_features(context: AssetExecutionContext) -> None:
+    """Materialize features_dev.team_injury_features - one partition = one day."""
+    start_date, end_date = _get_plan_date_range(context)
+    config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
     result = execute_sqlmesh_plan_for_model(context, "features_dev.team_injury_features", config)
     
     # Get table row count for metadata
@@ -1232,4 +1807,4 @@ def team_injury_features(context: AssetExecutionContext) -> Dict[str, Any]:
     finally:
         conn.close()
     
-    return result
+    return None  # Opt out of IO manager so multi-partition backfills work

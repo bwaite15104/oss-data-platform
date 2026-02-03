@@ -69,6 +69,7 @@ python scripts/db_query.py "SELECT * FROM raw_dev.teams LIMIT 5"
 | Rule | Purpose |
 |------|---------|
 | `sqlmesh-model-design.mdc` | Avoid mega-models, use feature groups |
+| `dagster-asset-partitioning.mdc` | One partitioned Dagster asset per table; new tables must use partitioning |
 | `validation-workflow.mdc` | Validate changes automatically |
 | `documentation-maintenance.mdc` | Keep docs in sync |
 
@@ -76,8 +77,9 @@ python scripts/db_query.py "SELECT * FROM raw_dev.teams LIMIT 5"
 
 1. **Prefer Incremental**: Use `INCREMENTAL_BY_TIME_RANGE` for time-series data
 2. **Avoid Mega Models**: Max 10-15 JOINs per model; split into feature groups
-3. **Create Indexes**: Run `python scripts/create_sqlmesh_indexes.py` after direct backfills
-4. **Chunked Backfill**: Use `scripts/backfill_incremental_chunked.py` for heavy models
+3. **One partitioned asset per table**: Every new table gets an individual Dagster asset with daily partitioning for backfills (see `dagster-asset-partitioning.mdc`)
+4. **Create Indexes**: Run `python scripts/create_sqlmesh_indexes.py` after direct backfills
+5. **Chunked Backfill**: Use `scripts/backfill_incremental_chunked.py` for heavy models
 
 See `.cursor/rules/sqlmesh-model-design.mdc` and `.cursor/docs/sqlmesh-guide.md` for details.
 

@@ -18,8 +18,8 @@ model_defaults:
   dialect: postgres
   start: '2010-10-01'  # Start from 15 years ago to include more historical data for training
 
-# Physical table naming: use hash_md5 so names stay under PostgreSQL's 63-char identifier limit
-# (long model names like int_team_home_away_splits_by_opponent_quality exceed the limit with schema_and_table)
+# Physical table naming: use hash_md5 so names stay under PostgreSQL's 63-char identifier limit.
+# SQLMesh temp tables during plan use schema__model__hash_schema_tmp - keep model short names <= 27 chars.
 physical_table_naming_convention: hash_md5
 
 # Physical schema mapping

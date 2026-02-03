@@ -1,0 +1,28 @@
+---
+description: Dagster asset partitioning for tables; new tables need a partitioned asset
+globs: "**/orchestration/dagster/**/*.py"
+alwaysApply: false
+---
+
+# Dagster Asset Partitioning
+
+We use **Dagster asset partitioning** for all individual transformation tables. This enables backfilling by date (e.g. one day or a range) instead of full-table runs.
+
+## Requirements for New Tables
+
+1. **One asset per table** – Every new table (SQLMesh model) that materializes data must have a corresponding **individual Dagster asset** in `orchestration/dagster/assets/` (e.g. `sqlmesh_transforms.py`). Do not add tables without a Dagster asset.
+
+2. **Use partitioning when data is time-scoped** – If the table is keyed by a date (e.g. `game_date`) and uses `INCREMENTAL_BY_TIME_RANGE` in SQLMesh, the Dagster asset **must** use:
+   - `partitions_def=TRANSFORMATION_DAILY_PARTITIONS` (or the project’s daily partitions definition)
+   - `backfill_policy=BackfillPolicy.multi_run(max_partitions_per_run=30)` (or the project default)
+   - Logic that passes `plan_start_date` / `plan_end_date` from the partition key(s) into the SQLMesh run (`--start` / `--end`)
+
+3. **Opt out of IO manager for partitioned assets** – Assets that can run over multiple partitions in one run must **return `None`** and use **return type `-> None`** so the default IO manager is not used (it cannot persist one output for many partitions).
+
+## Reference Implementation
+
+- **Partition config**: `TRANSFORMATION_DAILY_PARTITIONS`, `TRANSFORMATION_BACKFILL_POLICY` in `orchestration/dagster/assets/transformation/sqlmesh_transforms.py`
+- **Date range from context**: `_get_plan_date_range(context)` for single partition or partition range
+- **SQLMesh run**: `SQLMeshConfig(plan_start_date=..., plan_end_date=...)` passed into the run helper that calls `sqlmesh run --start / --end`
+
+When adding a new SQLMesh model, add a matching partitioned asset (if time-scoped) so backfills stay simple and consistent.

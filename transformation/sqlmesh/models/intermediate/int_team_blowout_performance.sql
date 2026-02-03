@@ -1,7 +1,8 @@
 MODEL (
   name intermediate.int_team_blowout_perf,
   kind INCREMENTAL_BY_TIME_RANGE (
-    time_column game_date
+    time_column game_date,
+    batch_size 30
   ),
   start '1946-11-01',  -- Updated for full history backfill,
   grains [

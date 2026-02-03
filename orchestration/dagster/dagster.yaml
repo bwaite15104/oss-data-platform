@@ -1,3 +1,10 @@
+# Use QueuedRunCoordinator to enable run queueing and limit parallel partition backfills
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 2
+
 storage:
   postgres:
     postgres_db:
