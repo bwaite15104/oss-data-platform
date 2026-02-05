@@ -308,5 +308,5 @@ LEFT JOIN upset_resistance ur ON ur.game_id = g.game_id
 LEFT JOIN favored_underdog_performance fup ON fup.game_id = g.game_id
 LEFT JOIN recent_road_performance rrp ON rrp.game_id = g.game_id
 LEFT JOIN season_timing_performance stp ON stp.game_id = g.game_id
-LEFT JOIN playoff_race_context prc_home ON prc_home.game_date = g.game_date AND prc_home.team_id = g.home_team_id
-LEFT JOIN playoff_race_context prc_away ON prc_away.game_date = g.game_date AND prc_away.team_id = g.away_team_id;
+LEFT JOIN playoff_race_context prc_home ON prc_home.game_date = g.game_date::date AND prc_home.team_id = g.home_team_id
+LEFT JOIN playoff_race_context prc_away ON prc_away.game_date = g.game_date::date AND prc_away.team_id = g.away_team_id;

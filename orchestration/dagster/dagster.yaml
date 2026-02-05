@@ -5,17 +5,19 @@ run_coordinator:
   config:
     max_concurrent_runs: 2
 
+# Use DAGSTER_* env vars so project .env (POSTGRES_HOST=localhost) does not
+# override Docker's POSTGRES_HOST=postgres when Dagster loads .env from /app.
 storage:
   postgres:
     postgres_db:
       username:
-        env: POSTGRES_USER
+        env: DAGSTER_DATABASE_USER
       password:
-        env: POSTGRES_PASSWORD
+        env: DAGSTER_DATABASE_PASSWORD
       hostname:
-        env: POSTGRES_HOST
+        env: DAGSTER_DATABASE_HOST
       db_name:
-        env: POSTGRES_DB
+        env: DAGSTER_DATABASE
       port:
-        env: POSTGRES_PORT
+        env: DAGSTER_DATABASE_PORT
 

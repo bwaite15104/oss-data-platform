@@ -137,7 +137,7 @@ def get_feature_values_sample(n_samples=10000):
             COALESCE(mf.home_home_win_pct, 0.5) AS home_home_win_pct,
             COALESCE(mf.away_road_win_pct, 0.5) AS away_road_win_pct,
             COALESCE(mf.home_advantage, 0) AS home_advantage
-        FROM features_dev.game_features gf
+        FROM marts.mart_game_features gf
         LEFT JOIN intermediate.int_game_momentum_features mf ON mf.game_id = gf.game_id
         WHERE gf.game_date IS NOT NULL
           AND gf.home_score IS NOT NULL

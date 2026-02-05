@@ -29,7 +29,7 @@ Some models are computationally heavy (50+ JOINs, 1000+ columns) and cannot comp
 
 ### Heavy Models List
 - `intermediate.int_game_momentum_features` - Combined momentum features (50+ upstream models)
-- `features_dev.game_features` - ML-ready features (depends on all intermediates)
+- `marts.mart_game_features` - ML-ready features (depends on all intermediates)
 
 ### Chunked Backfill Script
 
@@ -40,9 +40,9 @@ The `scripts/backfill_incremental_chunked.py` script processes backfills in mana
 docker exec nba_analytics_dagster_webserver python /app/scripts/backfill_incremental_chunked.py \
     intermediate.int_game_momentum_features --start-year 2020 --end-year 2026 --chunk-days 30 --timeout 3600
 
-# Backfill game_features (after int_game_momentum_features is complete)
+# Backfill mart_game_features (after int_game_momentum_features is complete)
 docker exec nba_analytics_dagster_webserver python /app/scripts/backfill_incremental_chunked.py \
-    features_dev.game_features --start-year 2020 --end-year 2026 --chunk-days 30 --timeout 3600
+    marts.mart_game_features --start-year 2020 --end-year 2026 --chunk-days 30 --timeout 3600
 
 # Current year only (faster, for regular updates)
 docker exec nba_analytics_dagster_webserver python /app/scripts/backfill_incremental_chunked.py \

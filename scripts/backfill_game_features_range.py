@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
-Partial backfill for marts.mart_game_features (and thus features_dev.game_features).
+Partial backfill for marts.mart_game_features.
 
 Use this when you **add a new column/feature** and don't want to backfill the entire
 history. Only the date range you specify is rematerialized; older data is unchanged.
 
-- features_dev.game_features is a VIEW over marts.mart_game_features, so backfilling
-  the mart updates what the view returns.
 - By default, backfills only the last 5 years (suitable for ML training on recent data).
 - For full history, use scripts/backfill_incremental_chunked.py marts.mart_game_features.
 
@@ -142,7 +140,7 @@ def main() -> int:
 
     print(f"Partial backfill for {MODEL_NAME}")
     print(f"Range: {start_year} to {end_year} (years {end_year - start_year + 1})")
-    print("(features_dev.game_features is a VIEW over this mart; it will reflect the update.)")
+    print("(ML and scripts read from marts.mart_game_features directly.)")
     print("-" * 60)
 
     return subprocess.call(cmd, cwd=str(get_project_root()))

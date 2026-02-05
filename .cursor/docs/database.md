@@ -223,14 +223,14 @@ Use `make db-counts` or `python scripts/db_query.py --counts raw_dev` to check c
 | marts | `mart_game_features` | ML-ready game features | 584 |
 | marts | `mart_team_standings` | Current standings | 31 |
 
-### Feature Store (features_dev)
+### Feature Store (marts + features_dev)
 
-| Table | Description | Count |
-|-------|-------------|-------|
-| `game_features` | ML training features | 584 |
-| `team_features` | Team season stats | 31 |
-| `team_injury_features` | Injury counts by team | 29 |
-| `feature_registry` | Feature metadata | 11 |
+| Schema | Table | Description | Count |
+|--------|-------|-------------|-------|
+| marts | `mart_game_features` | ML training features (used by training/predictions) | 584 |
+| features_dev | `team_features` | Team season stats | 31 |
+| features_dev | `team_injury_features` | Injury counts by team | 29 |
+| features_dev | `feature_registry` | Feature metadata | 11 |
 
 ## Useful Queries
 

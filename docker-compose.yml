@@ -1,4 +1,6 @@
 
+# Core services (no profile) start with: docker compose up -d
+# Full stack: docker compose --profile datahub --profile monitoring --profile metabase --profile feast up -d
 services:
   # PostgreSQL - Data Warehouse
   postgres:
@@ -41,7 +43,7 @@ services:
     networks:
       - oss_data_platform
 
-  # Dagster Webserver
+  # Dagster Webserver (core - no profile)
   # Optional: add deploy.resources.limits (e.g. memory: 4G) if the container
   # overwhelms the host; see .cursor/docs/dagster-issues-and-fixes.md §8
   dagster_webserver:
@@ -52,12 +54,19 @@ services:
     environment:
       - DAGSTER_HOME=/opt/dagster/dagster_home
       - DAGSTER_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-nba_analytics}
+      # Instance storage (dagster.yaml); not in .env so not overridden when Dagster loads .env
+      - DAGSTER_DATABASE_HOST=postgres
+      - DAGSTER_DATABASE_PORT=5432
+      - DAGSTER_DATABASE=${POSTGRES_DB:-nba_analytics}
+      - DAGSTER_DATABASE_USER=${POSTGRES_USER:-postgres}
+      - DAGSTER_DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-nba_analytics}
       - DATA_ENV=${DATA_ENV:-dev}
+      - DAGSTER_IN_DOCKER=1
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       # dlt configuration for nba_stats pipeline
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST=postgres
@@ -89,7 +98,7 @@ services:
     networks:
       - oss_data_platform
 
-  # Dagster Daemon (runs sensors/schedules; also executes runs when using default run launcher)
+  # Dagster Daemon (core - no profile)
   # Optional: add deploy.resources.limits if needed; see .cursor/docs/dagster-issues-and-fixes.md §8
   dagster_daemon:
     build:
@@ -99,12 +108,19 @@ services:
     environment:
       - DAGSTER_HOME=/opt/dagster/dagster_home
       - DAGSTER_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-nba_analytics}
+      # Instance storage (dagster.yaml); not in .env so not overridden when Dagster loads .env
+      - DAGSTER_DATABASE_HOST=postgres
+      - DAGSTER_DATABASE_PORT=5432
+      - DAGSTER_DATABASE=${POSTGRES_DB:-nba_analytics}
+      - DAGSTER_DATABASE_USER=${POSTGRES_USER:-postgres}
+      - DAGSTER_DATABASE_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-nba_analytics}
       - DATA_ENV=${DATA_ENV:-dev}
+      - DAGSTER_IN_DOCKER=1
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       # dlt configuration for nba_stats pipeline
       - NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__HOST=postgres
@@ -131,8 +147,10 @@ services:
     networks:
       - oss_data_platform
 
-  # DataHub MySQL
+  # DataHub MySQL (profile: datahub)
   datahub_mysql:
+    profiles:
+      - datahub
     image: mysql:8.0
     container_name: oss_data_platform_datahub_mysql
     environment:
@@ -148,8 +166,10 @@ services:
     networks:
       - oss_data_platform
 
-  # DataHub Elasticsearch
+  # DataHub Elasticsearch (profile: datahub)
   datahub_elasticsearch:
+    profiles:
+      - datahub
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.9
     container_name: oss_data_platform_datahub_elasticsearch
     environment:
@@ -168,8 +188,10 @@ services:
     networks:
       - oss_data_platform
 
-  # DataHub Kafka
+  # DataHub Kafka (profile: datahub)
   datahub_kafka:
+    profiles:
+      - datahub
     image: confluentinc/cp-kafka:7.4.0
     container_name: oss_data_platform_datahub_kafka
     environment:
@@ -186,8 +208,10 @@ services:
     networks:
       - oss_data_platform
 
-  # DataHub Zookeeper
+  # DataHub Zookeeper (profile: datahub)
   datahub_zookeeper:
+    profiles:
+      - datahub
     image: confluentinc/cp-zookeeper:7.4.0
     container_name: oss_data_platform_datahub_zookeeper
     environment:
@@ -198,8 +222,10 @@ services:
     networks:
       - oss_data_platform
 
-  # Prometheus
+  # Prometheus (profile: monitoring)
   prometheus:
+    profiles:
+      - monitoring
     image: prom/prometheus:latest
     container_name: oss_data_platform_prometheus
     ports:
@@ -214,8 +240,10 @@ services:
     networks:
       - oss_data_platform
 
-  # Grafana
+  # Grafana (profile: monitoring)
   grafana:
+    profiles:
+      - monitoring
     image: grafana/grafana:latest
     container_name: oss_data_platform_grafana
     ports:
@@ -233,8 +261,10 @@ services:
     networks:
       - oss_data_platform
 
-  # Metabase - BI Dashboard
+  # Metabase - BI Dashboard (profile: metabase)
   metabase:
+    profiles:
+      - metabase
     image: metabase/metabase:latest
     container_name: oss_data_platform_metabase
     ports:
@@ -274,8 +304,10 @@ services:
     networks:
       - oss_data_platform
 
-  # Feast UI Server (slim image with feast only)
+  # Feast UI Server (profile: feast - runs pip install on start, can be slow)
   feast_ui:
+    profiles:
+      - feast
     image: python:3.11-slim
     container_name: oss_data_platform_feast_ui
     ports:

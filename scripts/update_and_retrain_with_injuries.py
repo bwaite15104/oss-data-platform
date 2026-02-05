@@ -156,7 +156,6 @@ def main():
     logger.info("\n[Step 3/6] Backfilling game features model...")
     game_model_names = [
         "marts.mart_game_features",
-        "features_dev.game_features",
     ]
     
     game_success = False
@@ -176,7 +175,7 @@ def main():
     logger.info("\n[Step 4/6] Materializing Dagster transformation assets...")
     dagster_assets = [
         "team_injury_features",
-        "game_features",
+        "mart_game_features",
     ]
     
     for asset_name in dagster_assets:

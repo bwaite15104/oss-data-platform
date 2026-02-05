@@ -67,6 +67,11 @@ def _get_plan_date_range(context: AssetExecutionContext) -> tuple[str, str]:
 # SQLMesh project path
 SQLMESH_PROJECT_PATH = Path(__file__).parent.parent.parent.parent.parent / "transformation" / "sqlmesh"
 
+# Single source of truth: logical table name for mart_game_features when using gateway "local".
+# SQLMesh creates schema__environment.table (e.g. marts__local.mart_game_features). ML assets
+# must read from this same table so they see the data the mart asset writes.
+MART_GAME_FEATURES_TABLE = "marts__local.mart_game_features"
+
 
 class SQLMeshConfig(BaseModel):
     """Configuration for SQLMesh execution."""
@@ -85,10 +90,20 @@ class SQLMeshConfig(BaseModel):
     timeout_seconds: int = 14400  # 4 hours default; heavy models like int_game_momentum_features need this
 
 
+def _is_docker() -> bool:
+    """True when running inside a Docker container (e.g. Dagster worker)."""
+    return os.path.exists("/.dockerenv") or (
+        os.path.exists("/proc/1/cgroup")
+        and "docker" in Path("/proc/1/cgroup").read_text()
+    )
+
+
 def get_postgres_connection() -> psycopg2.extensions.connection:
-    """Get PostgreSQL connection for monitoring."""
+    """Get PostgreSQL connection for monitoring and metadata.
+    In Docker, use host 'postgres' so .env (POSTGRES_HOST=localhost) does not break connections."""
+    host = "postgres" if _is_docker() else os.getenv("POSTGRES_HOST", "localhost")
     return psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
+        host=host,
         port=os.getenv("POSTGRES_PORT", "5432"),
         database=os.getenv("POSTGRES_DB", "nba_analytics"),
         user=os.getenv("POSTGRES_USER", "postgres"),
@@ -325,6 +340,51 @@ def create_indexes_for_sqlmesh_snapshot(
     return indexes_created
 
 
+# Staging model names (VIEWs); must be applied before any intermediate model runs
+STAGING_MODELS = [
+    "staging.stg_games",
+    "staging.stg_team_boxscores",
+    "staging.stg_teams",
+    "staging.stg_injuries",
+    "staging.stg_player_boxscores",
+]
+
+
+def _get_sqlmesh_exe() -> str:
+    """Return path to sqlmesh executable (Docker vs local)."""
+    is_docker = os.path.exists("/.dockerenv") or os.path.exists("/proc/1/cgroup")
+    if is_docker:
+        return "sqlmesh"
+    sqlmesh_exe = Path(os.getenv("LOCALAPPDATA", "")) / "Programs" / "Python" / "Python312" / "Scripts" / "sqlmesh.exe"
+    return str(sqlmesh_exe) if sqlmesh_exe.exists() else "sqlmesh"
+
+
+def execute_sqlmesh_plan_staging(context: AssetExecutionContext) -> None:
+    """Run SQLMesh plan for all staging models so views exist before intermediate models."""
+    start_time = datetime.now()
+    project_dir = str(SQLMESH_PROJECT_PATH.absolute())
+    original_dir = os.getcwd()
+    os.chdir(project_dir)
+    Path(project_dir).joinpath("logs").mkdir(exist_ok=True)
+    env = os.environ.copy()
+    if not (os.path.exists("/.dockerenv") or os.path.exists("/proc/1/cgroup")):
+        env["POSTGRES_HOST"] = env.get("POSTGRES_HOST", "localhost")
+    cmd = [_get_sqlmesh_exe(), "plan", "local", "--auto-apply", "--no-prompts"]
+    for m in STAGING_MODELS:
+        cmd.extend(["--select-model", m])
+    context.log.info(f"Executing SQLMesh plan for staging views: {' '.join(cmd)}")
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
+        duration = (datetime.now() - start_time).total_seconds()
+        output = (result.stdout or "") + (result.stderr or "")
+        if result.returncode != 0:
+            context.log.error(f"SQLMesh staging plan failed: {output[:1500]}")
+            raise RuntimeError(f"SQLMesh plan for staging views failed (exit {result.returncode}): {output[:500]}")
+        context.log.info(f"Staging views applied in {duration:.2f}s")
+    finally:
+        os.chdir(original_dir)
+
+
 def execute_sqlmesh_plan_for_model(
     context: AssetExecutionContext,
     model_name: str,
@@ -332,19 +392,7 @@ def execute_sqlmesh_plan_for_model(
 ) -> None:
     """Execute SQLMesh plan for a specific model and return results with monitoring."""
     start_time = datetime.now()
-    
-    # Get SQLMesh executable - in Docker it's just "sqlmesh", on Windows it might be sqlmesh.exe
-    # Check if we're in Docker (common indicators)
-    is_docker = os.path.exists("/.dockerenv") or os.path.exists("/proc/1/cgroup")
-    if is_docker:
-        sqlmesh_exe = "sqlmesh"
-    else:
-        # Try Windows path first
-        sqlmesh_exe = Path(os.getenv("LOCALAPPDATA", "")) / "Programs" / "Python" / "Python312" / "Scripts" / "sqlmesh.exe"
-        if not sqlmesh_exe.exists():
-            sqlmesh_exe = "sqlmesh"
-        else:
-            sqlmesh_exe = str(sqlmesh_exe)
+    sqlmesh_exe = _get_sqlmesh_exe()
     
     # Build command for specific model
     # SQLMesh uses environment as positional argument: `sqlmesh plan ENVIRONMENT [OPTIONS]`
@@ -374,6 +422,7 @@ def execute_sqlmesh_plan_for_model(
     
     if config.auto_apply:
         cmd.append("--auto-apply")
+    cmd.append("--no-prompts")
     
     # Change to SQLMesh project directory
     project_dir = str(config.project_path.absolute())
@@ -528,11 +577,22 @@ def execute_sqlmesh_plan_for_model(
         raise
 
 
+# Staging views (must run before any intermediate model that reads from staging)
+@asset(
+    group_name="transformations",
+    description="Apply SQLMesh staging views (stg_games, stg_team_boxscores, etc.) so intermediate models can run",
+    deps=[nba_team_boxscores, nba_games, nba_boxscores, nba_injuries, nba_teams, nba_players],
+)
+def staging_views(context: AssetExecutionContext) -> None:
+    """Create staging schema views that read from raw_dev.*."""
+    execute_sqlmesh_plan_staging(context)
+
+
 # Intermediate Models - Materialized tables
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_rolling_stats - Team rolling statistics (last 5 and 10 games)",
-    deps=[nba_team_boxscores, nba_games],  # Depends on team boxscores and games data
+    deps=[staging_views, nba_team_boxscores, nba_games],  # Staging views first, then raw data
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
@@ -574,7 +634,7 @@ def int_team_rolling_stats(context: AssetExecutionContext) -> None:
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_roll_lkp - Pre-computed lookup table for latest rolling stats before each game",
-    deps=[int_team_rolling_stats, nba_games],  # Depends on rolling stats and games
+    deps=[staging_views, int_team_rolling_stats, nba_games],  # SQL uses staging.stg_games, intermediate.int_team_rolling_stats
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -616,7 +676,7 @@ def int_team_rolling_stats_lookup(context: AssetExecutionContext) -> None:
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_season_stats - Team season aggregated statistics",
-    deps=[nba_team_boxscores, nba_games],  # Depends on team boxscores and games data
+    deps=[staging_views, nba_team_boxscores, nba_games],
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
@@ -652,7 +712,7 @@ def int_team_season_stats(context: AssetExecutionContext) -> None:
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_star_players - Identifies star players (top players by PPG)",
-    deps=[nba_boxscores],  # Depends on player boxscores data
+    deps=[staging_views, nba_boxscores],  # SQL uses staging.stg_player_boxscores, stg_games
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
@@ -694,7 +754,7 @@ def int_star_players(context: AssetExecutionContext) -> None:
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_star_player_avail - Star player game availability",
-    deps=[int_star_players, nba_boxscores],  # Depends on star players and boxscores
+    deps=[staging_views, int_star_players, nba_boxscores],  # SQL uses staging.stg_player_boxscores, stg_games
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
@@ -730,7 +790,7 @@ def int_star_player_availability(context: AssetExecutionContext) -> None:
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_game_injury_features - Injury impact features by game (VIEW)",
-    deps=[int_star_players, nba_games, nba_injuries, nba_boxscores],
+    deps=[staging_views, int_star_players, nba_games, nba_injuries, nba_boxscores],  # SQL uses staging.stg_*
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -904,7 +964,7 @@ def int_team_h2h_stats(context: AssetExecutionContext) -> None:
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_team_opponent_quality - Average win % of recent opponents",
-    deps=[nba_games, int_team_season_stats],  # Depends on games and season stats
+    deps=[int_team_rolling_stats, int_team_season_stats, nba_games],  # SQL references int_team_rolling_stats (LATERAL)
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
@@ -937,7 +997,7 @@ def int_team_opponent_quality(context: AssetExecutionContext) -> None:
 @asset(
     group_name="transformations",
     description="Materialize intermediate.int_away_upset_tend - Away team upset tendency (INCREMENTAL)",
-    deps=[int_team_season_stats, int_team_rolling_stats, nba_games],
+    deps=[staging_views, int_team_rolling_stats, int_team_season_stats, nba_games],  # SQL uses staging.stg_games
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1074,7 +1134,7 @@ int_team_recent_momentum_exponential = asset(
     name="int_team_recent_momentum_exponential",
     group_name="transformations",
     description="Materialize intermediate.int_team_recent_mom_exp - Exponential momentum",
-    deps=[int_team_rolling_stats, nba_games],
+    deps=[staging_views, int_team_rolling_stats, nba_games],  # SQL uses staging
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1086,7 +1146,7 @@ int_team_rivalry_indicators = asset(
     name="int_team_rivalry_indicators",
     group_name="transformations",
     description="Materialize intermediate.int_team_rivalry_ind - Rivalry indicators",
-    deps=[int_team_h2h_stats, nba_games],
+    deps=[staging_views, int_team_h2h_stats, nba_games],  # SQL uses staging.stg_games
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1097,7 +1157,7 @@ int_team_opponent_specific_performance = asset(
     name="int_team_opponent_specific_performance",
     group_name="transformations",
     description="Materialize intermediate.int_team_opp_specific_perf - Opponent-specific performance",
-    deps=[int_team_h2h_stats, int_team_rolling_stats_lookup, nba_games],
+    deps=[staging_views, int_team_h2h_stats, int_team_rolling_stats_lookup, nba_games],  # SQL uses staging.stg_games
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1175,7 +1235,7 @@ int_team_recent_performance_weighted_by_opponent_quality = asset(
     name="int_team_recent_performance_weighted_by_opponent_quality",
     group_name="transformations",
     description="Materialize intermediate.int_team_recent_perf_wt_opp_qual - Recent perf weighted by opp",
-    deps=[int_team_opponent_quality, int_team_rolling_stats_lookup, nba_games],
+    deps=[int_team_opponent_quality, int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],  # SQL uses int_team_rolling_stats
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1242,7 +1302,7 @@ int_team_overtime_performance = asset(
     name="int_team_overtime_performance",
     group_name="transformations",
     description="Materialize intermediate.int_team_ot_perf - Overtime performance",
-    deps=[int_team_rolling_stats_lookup, nba_games],
+    deps=[staging_views, int_team_rolling_stats_lookup, nba_games],  # SQL uses staging.stg_games
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1253,7 +1313,7 @@ int_team_fourth_quarter_performance = asset(
     name="int_team_fourth_quarter_performance",
     group_name="transformations",
     description="Materialize intermediate.int_team_4q_perf - Fourth quarter performance",
-    deps=[int_team_rolling_stats_lookup, nba_games],
+    deps=[staging_views, int_team_rolling_stats_lookup, nba_games],  # SQL uses staging.stg_*
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1275,7 +1335,7 @@ int_team_upset_resistance = asset(
     name="int_team_upset_resistance",
     group_name="transformations",
     description="Materialize intermediate.int_team_upset_resistance - Upset resistance",
-    deps=[int_team_rolling_stats_lookup, nba_games],
+    deps=[int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],  # SQL uses int_team_rolling_stats
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1286,7 +1346,7 @@ int_team_favored_underdog_performance = asset(
     name="int_team_favored_underdog_performance",
     group_name="transformations",
     description="Materialize intermediate.int_team_favored_underdog_perf - Favored/underdog perf",
-    deps=[int_team_rolling_stats_lookup, int_team_season_stats, nba_games],
+    deps=[int_team_rolling_stats, int_team_rolling_stats_lookup, int_team_season_stats, nba_games],  # SQL uses int_team_rolling_stats
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1319,7 +1379,7 @@ int_team_playoff_race_context = asset(
     name="int_team_playoff_race_context",
     group_name="transformations",
     description="Materialize intermediate.int_team_playoff_ctx - Playoff race context",
-    deps=[int_team_season_stats, int_team_rolling_stats, nba_games],
+    deps=[staging_views, int_team_season_stats, int_team_rolling_stats, nba_games],  # SQL uses staging
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1331,7 +1391,7 @@ int_team_form_divergence = asset(
     name="int_team_form_divergence",
     group_name="transformations",
     description="Materialize intermediate.int_team_form_divergence - Form divergence",
-    deps=[int_team_rolling_stats, int_team_season_stats, nba_games],
+    deps=[staging_views, int_team_rolling_stats, int_team_season_stats, nba_games],  # SQL uses staging
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1342,7 +1402,7 @@ int_team_performance_trends = asset(
     name="int_team_performance_trends",
     group_name="transformations",
     description="Materialize intermediate.int_team_perf_trends - Performance trends",
-    deps=[int_team_rolling_stats_lookup, nba_games],
+    deps=[int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],  # SQL uses int_team_rolling_stats
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1353,7 +1413,7 @@ int_team_recent_momentum = asset(
     name="int_team_recent_momentum",
     group_name="transformations",
     description="Materialize intermediate.int_team_recent_momentum - Recent momentum",
-    deps=[int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],
+    deps=[staging_views, int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],  # SQL uses staging
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1364,7 +1424,7 @@ int_team_momentum_acceleration = asset(
     name="int_team_momentum_acceleration",
     group_name="transformations",
     description="Materialize intermediate.int_team_mom_accel - Momentum acceleration",
-    deps=[int_team_recent_momentum, int_team_rolling_stats_lookup, nba_games],
+    deps=[staging_views, int_team_recent_momentum, int_team_rolling_stats_lookup, nba_games],  # SQL uses staging.stg_games
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1375,7 +1435,7 @@ int_team_performance_acceleration = asset(
     name="int_team_performance_acceleration",
     group_name="transformations",
     description="Materialize intermediate.int_team_perf_accel - Performance acceleration",
-    deps=[int_team_rolling_stats_lookup, nba_games],
+    deps=[staging_views, int_team_rolling_stats_lookup, nba_games],  # SQL uses staging
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1386,7 +1446,7 @@ int_team_recent_form_trend = asset(
     name="int_team_recent_form_trend",
     group_name="transformations",
     description="Materialize intermediate.int_team_recent_form_trend - Recent form trend",
-    deps=[int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],
+    deps=[staging_views, int_team_rolling_stats, int_team_rolling_stats_lookup, nba_games],  # SQL uses staging.stg_games
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1463,7 +1523,7 @@ int_team_matchup_compatibility = asset(
     name="int_team_matchup_compatibility",
     group_name="transformations",
     description="Materialize intermediate.int_team_matchup_compat - Matchup compatibility",
-    deps=[int_team_matchup_style_performance, int_team_opponent_quality, nba_games],
+    deps=[int_team_rolling_stats, int_team_matchup_style_performance, int_team_opponent_quality, nba_games],  # SQL uses int_team_rolling_stats
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1474,7 +1534,7 @@ int_team_performance_by_pace_context = asset(
     name="int_team_performance_by_pace_context",
     group_name="transformations",
     description="Materialize intermediate.int_team_perf_by_pace_ctx - Perf by pace context",
-    deps=[int_team_rolling_stats_lookup, nba_games],
+    deps=[staging_views, int_team_rolling_stats_lookup, nba_games],  # SQL uses staging.stg_team_boxscores
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),
@@ -1695,49 +1755,40 @@ def int_game_momentum_features(context: AssetExecutionContext) -> None:
     return None  # Opt out of IO manager so multi-partition backfills work
 
 
-# Feature Models - Materialized tables
+# Mart: game features table (ML and predictions read from this directly)
 @asset(
     group_name="transformations",
-    description="Materialize features_dev.game_features - ML-ready game features for prediction models",
-    deps=[int_team_rolling_stats_lookup, int_team_season_stats, int_star_player_availability, int_team_star_player_features, int_game_injury_features, int_away_team_upset_tendency, int_game_momentum_features, nba_games],  # Via mart_game_features: all upstream intermediates
+    description="Materialize marts.mart_game_features - ML-ready game features table (incremental)",
+    deps=[staging_views, int_team_rolling_stats_lookup, int_team_season_stats, int_star_player_availability, int_team_star_player_features, int_game_injury_features, int_away_team_upset_tendency, int_game_momentum_features, nba_games],
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
-    automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete
+    automation_condition=AutomationCondition.eager(),
     retry_policy=RetryPolicy(max_retries=2, delay=60),
 )
-def game_features(context: AssetExecutionContext) -> None:
-    """Materialize features_dev.game_features - one partition = one day."""
+def mart_game_features(context: AssetExecutionContext) -> None:
+    """Materialize marts.mart_game_features for ML training and predictions.
+    Writes to SQLMesh 'local' environment; ML assets read from MART_GAME_FEATURES_TABLE."""
     start_date, end_date = _get_plan_date_range(context)
     config = SQLMeshConfig(plan_start_date=start_date, plan_end_date=end_date)
-    result = execute_sqlmesh_plan_for_model(context, "features_dev.game_features", config)
-    
-    # Get table row count and create indexes for performance
+    result = execute_sqlmesh_plan_for_model(context, "marts.mart_game_features", config)
     conn = get_postgres_connection()
     try:
-        row_count = get_table_row_count(conn, "features_dev", "game_features")
-        
-        # Create indexes on the newly materialized snapshot table
+        row_count = get_table_row_count(conn, "marts", "mart_game_features")
         indexes_created = create_indexes_for_sqlmesh_snapshot(
-            conn, "features_dev", "features_dev.game_features"
+            conn, "marts", "marts.mart_game_features"
         )
-        
-        metadata = {
+        context.add_output_metadata({
+            "table": MetadataValue.text(MART_GAME_FEATURES_TABLE),
             "duration_seconds": MetadataValue.float(result["duration_seconds"]),
             "row_count": MetadataValue.int(row_count) if row_count is not None else MetadataValue.text("N/A"),
             "indexes_created": MetadataValue.int(len(indexes_created)),
-            "active_queries_before": MetadataValue.int(result["active_queries_before"]),
-            "blocking_locks_before": MetadataValue.int(result["blocking_locks_before"]),
-            "active_queries_after": MetadataValue.int(result["active_queries_after"]),
-            "blocking_locks_after": MetadataValue.int(result["blocking_locks_after"]),
-        }
-        
-        context.add_output_metadata(metadata)
+        })
     finally:
         conn.close()
-    
-    return None  # Opt out of IO manager so multi-partition backfills work
+    return None
 
 
+# Feature Models
 @asset(
     group_name="transformations",
     description="Materialize features_dev.team_features - Team-level features",
@@ -1777,7 +1828,7 @@ def team_features(context: AssetExecutionContext) -> None:
 @asset(
     group_name="transformations",
     description="Materialize features_dev.team_injury_features - Team injury features",
-    deps=[nba_injuries],  # Depends on injuries data
+    deps=[staging_views, nba_injuries],  # SQL uses staging.stg_injuries
     partitions_def=TRANSFORMATION_DAILY_PARTITIONS,
     backfill_policy=TRANSFORMATION_BACKFILL_POLICY,
     automation_condition=AutomationCondition.eager(),  # Run automatically when upstreams complete

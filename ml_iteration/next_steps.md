@@ -5,7 +5,7 @@
 **Starting fresh** after data infrastructure refactor (momentum feature groups).
 
 - **Best historical accuracy**: ~0.66 (test), ~0.75 target
-- **Current feature count**: 800+ columns in `features_dev.game_features`
+- **Current feature count**: 800+ columns in `marts.mart_game_features`
 - **Data infrastructure**: Fully materialized with new feature group architecture
 
 ## Next Steps (Prioritized)

@@ -1,6 +1,9 @@
 """Transformation assets."""
 
 from .sqlmesh_transforms import (
+    MART_GAME_FEATURES_TABLE,
+    # Staging (must run before intermediates that read from staging)
+    staging_views,
     # Intermediate models
     int_team_rolling_stats,
     int_team_rolling_stats_lookup,
@@ -65,13 +68,15 @@ from .sqlmesh_transforms import (
     int_momentum_group_trends,
     # Combined momentum features (joins the 5 groups)
     int_game_momentum_features,
-    # Feature models
-    game_features,
+    # Mart and feature models
+    mart_game_features,
     team_features,
     team_injury_features,
 )
 
 __all__ = [
+    "MART_GAME_FEATURES_TABLE",
+    "staging_views",
     # Intermediate models
     "int_team_rolling_stats",
     "int_team_rolling_stats_lookup",
@@ -136,8 +141,8 @@ __all__ = [
     "int_momentum_group_trends",
     # Combined momentum features
     "int_game_momentum_features",
-    # Feature models
-    "game_features",
+    # Mart and feature models
+    "mart_game_features",
     "team_features",
     "team_injury_features",
 ]

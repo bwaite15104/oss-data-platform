@@ -20,9 +20,11 @@ if str(project_root) not in sys.path:
 
 # Import prediction and transformation assets for dependency references
 from .predictions import generate_game_predictions
-from orchestration.dagster.assets.transformation import game_features
+from orchestration.dagster.assets.transformation import mart_game_features, MART_GAME_FEATURES_TABLE
 
 logger = logging.getLogger(__name__)
+
+MART_FEATURES_TABLE = os.getenv("MART_FEATURES_TABLE", MART_GAME_FEATURES_TABLE)
 
 
 class ModelEvaluationConfig(Config):
@@ -34,7 +36,7 @@ class ModelEvaluationConfig(Config):
 @asset(
     group_name="ml_pipeline",
     description="Evaluate model performance by comparing predictions vs actual outcomes",
-    deps=[generate_game_predictions, game_features],  # Depend on predictions and updated game results
+    deps=[generate_game_predictions, mart_game_features],  # Depend on predictions and updated game results
     automation_condition=AutomationCondition.eager(),  # Run when predictions update OR when new game results available
 )
 def evaluate_model_performance(context, config: ModelEvaluationConfig) -> dict:
@@ -91,7 +93,7 @@ def evaluate_model_performance(context, config: ModelEvaluationConfig) -> dict:
                 gf.home_win as actual_value,
                 gf.game_date
             FROM ml_dev.predictions p
-            JOIN features_dev.game_features gf ON p.game_id = gf.game_id
+            JOIN {MART_FEATURES_TABLE} gf ON p.game_id = gf.game_id
             WHERE gf.home_win IS NOT NULL
               AND gf.home_score IS NOT NULL
               AND gf.away_score IS NOT NULL

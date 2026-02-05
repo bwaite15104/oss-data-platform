@@ -7,7 +7,7 @@ os.chdir('/app/transformation/sqlmesh')
 
 # Try to force SQLMesh to evaluate and materialize
 result = subprocess.run(
-    ['sqlmesh', 'eval', 'local', 'features_dev.game_features', '2026-01-19', '2026-01-19'],
+    ['sqlmesh', 'eval', 'local', 'marts.mart_game_features', '2026-01-19', '2026-01-19'],
     capture_output=True,
     text=True
 )

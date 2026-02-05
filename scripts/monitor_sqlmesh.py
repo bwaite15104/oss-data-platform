@@ -156,7 +156,7 @@ def get_sqlmesh_progress(conn) -> List[Dict]:
         ("intermediate", "int_team_rolling_stats"),
         ("intermediate", "int_team_season_stats"),
         ("intermediate", "int_star_players"),
-        ("features_dev", "game_features"),
+        ("marts", "mart_game_features"),
         ("features_dev", "team_features"),
     ]
     

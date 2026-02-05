@@ -114,7 +114,7 @@ sqlmesh ui                    # Start SQLMesh web UI
 ### Verify Feature Store
 ```bash
 python scripts/db_query.py --counts features_dev
-python scripts/db_query.py "SELECT * FROM features_dev.game_features LIMIT 5"
+python scripts/db_query.py "SELECT * FROM marts.mart_game_features LIMIT 5"
 ```
 
 ## Validation Commands

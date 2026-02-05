@@ -36,14 +36,14 @@ Build ML models to predict NBA game outcomes for sports betting.
 | marts | `mart_game_features` | **584** | ML-ready features per game |
 | marts | `mart_team_standings` | 31 | Current standings with streaks |
 
-### ✅ Feature Store (features_dev schema)
+### ✅ Feature Store (marts + features_dev)
 
-| Table | Records | Description |
-|-------|---------|-------------|
-| `game_features` | **594** | ML training data with rolling averages + star player returns |
-| `team_features` | 31 | Season-level team stats |
-| `team_injury_features` | 29 | Injury impact by team |
-| `feature_registry` | 11 | Registered features metadata |
+| Schema | Table | Records | Description |
+|--------|-------|---------|-------------|
+| marts | `mart_game_features` | **594** | ML training data (rolling averages, star returns; used by training/predictions) |
+| features_dev | `team_features` | 31 | Season-level team stats |
+| features_dev | `team_injury_features` | 29 | Injury impact by team |
+| features_dev | `feature_registry` | 11 | Registered features metadata |
 
 **New Features (Jan 2026):**
 - **Star Player Return Features** (16 features):
@@ -221,7 +221,7 @@ ml_dev.betting_results (P&L tracking)
 **Training and Prediction pipelines are separated in Dagster:**
 
 ```
-features_dev.game_features
+marts.mart_game_features
     ↓
 train_game_winner_model (Dagster asset, daily schedule)
     ↓
@@ -253,7 +253,7 @@ For how the LLM should use these when doing model improvements, evaluation, or h
 
 ## ✅ Completed Steps
 
-1. ✅ **Feature store created** - `features_dev.game_features` with 584 games
+1. ✅ **Feature store created** - `marts.mart_game_features` (ML reads directly; features_dev.game_features view removed) with 584 games
 2. ✅ **ML schema infrastructure** - `ml_dev.model_registry`, `ml_dev.predictions`, `ml_dev.betting_results`
 3. ✅ **Training pipeline** - Dagster asset for XGBoost model training
 4. ✅ **Prediction pipeline** - Dagster asset for generating predictions

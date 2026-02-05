@@ -1,5 +1,9 @@
+# Code location: load definitions from repo root (/app in Docker).
+# python_module + working_directory is reliable when workspace.yaml lives in
+# orchestration/dagster (different dir from definitions.py).
 load_from:
-  - python_file:
-      relative_path: /app/definitions.py
+  - python_module:
+      module_name: definitions
       working_directory: /app
+      attribute: defs
 

@@ -3,17 +3,29 @@ Dagster definitions for local development.
 
 This file is for running Dagster locally (outside Docker).
 Use: dagster dev -f definitions.py
+
+Set POSTGRES_* and optionally DATA_ENV in .env (see .env.example) so dlt
+ingestion assets can connect to Postgres and create/update raw_dev tables.
 """
 
 import sys
 from pathlib import Path
 
-# Add project directories to path for local development
+# Load .env so POSTGRES_* and DATA_ENV are set for local runs (no-op if missing).
+# Use override=False so Docker-set env (e.g. POSTGRES_HOST=postgres) is not overwritten
+# when running in container; local .env still fills in vars when they are unset.
 project_root = Path(__file__).parent
+try:
+    from dotenv import load_dotenv
+    load_dotenv(project_root / ".env", override=False)
+except ImportError:
+    pass
+
+# Add project directories to path for local development
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "orchestration" / "dagster"))
 
-from dagster import Definitions, in_process_executor, load_assets_from_modules
+from dagster import Definitions, in_process_executor, load_assets_from_modules, define_asset_job
 
 # Import asset modules
 from orchestration.dagster.assets import ingestion, transformation, quality, ml
@@ -23,6 +35,13 @@ from orchestration.dagster.schedules import schedules, jobs
 
 # Load assets from modules
 all_assets = load_assets_from_modules([ingestion, transformation, quality, ml])
+
+# Full pipeline: one job that materializes all assets in dependency order
+full_pipeline_job = define_asset_job(
+    name="full_pipeline",
+    selection="*",
+    description="Materialize all assets (ingestion → staging → transformations → features).",
+)
 
 # Extract resources from Baselinr definitions if quality assets are loaded
 resources = {}
@@ -45,7 +64,7 @@ if hasattr(quality, 'baselinr_defs') and quality.baselinr_defs:
 defs = Definitions(
     assets=all_assets,
     resources=resources if resources else None,
-    jobs=jobs,
+    jobs=[full_pipeline_job] + (jobs or []),
     schedules=schedules,
     executor=in_process_executor,
 )

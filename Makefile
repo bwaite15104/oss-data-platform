@@ -1,4 +1,4 @@
-.PHONY: help setup install compose-contracts generate-configs validate docker-up docker-down test clean dagster-dev dagster-list
+.PHONY: help setup install compose-contracts generate-configs validate docker-up docker-up-full docker-down test clean dagster-dev dagster-list
 
 help:
 	@echo "OSS Data Platform - Makefile Commands"
@@ -12,8 +12,9 @@ help:
 	@echo "  make dagster-list       - List all available assets"
 	@echo ""
 	@echo "Docker Services:"
-	@echo "  make docker-up          - Start infrastructure services (Postgres, Dagster, Metabase)"
-	@echo "  make docker-down        - Stop infrastructure services"
+	@echo "  make docker-up          - Start core services (Postgres, Dagster, MLflow) only"
+	@echo "  make docker-up-full     - Start all services (DataHub, Metabase, Feast, etc.)"
+	@echo "  make docker-down        - Stop all services"
 	@echo ""
 	@echo "Configuration:"
 	@echo "  make compose-contracts  - Compose all contracts from schemas + quality"
@@ -74,8 +75,17 @@ generate-configs: compose-contracts
 validate:
 	python tools/validate_odcs.py
 
+# Start core services only (Postgres, Dagster, MLflow). Returns quickly; avoids hang from
+# starting 14 containers at once (DataHub, Metabase, Feast, etc. are behind profiles).
 docker-up:
-	docker-compose $(if $(wildcard .env),--env-file .env,) up -d
+	docker compose $(if $(wildcard .env),--env-file .env,) up -d
+	@echo "Core services starting (postgres, baselinr_postgres, mlflow, dagster_webserver, dagster_daemon)."
+	@echo "First run may take 1-2 min while Dagster image builds. Full stack: make docker-up-full"
+
+# Start all services including DataHub, Metabase, monitoring, Feast (can be slow on first run).
+docker-up-full:
+	docker compose $(if $(wildcard .env),--env-file .env,) --profile datahub --profile monitoring --profile metabase --profile feast up -d
+	@echo "Full stack starting. Check status: docker compose ps"
 
 docker-down:
 	docker-compose down

@@ -66,6 +66,7 @@ DESTINATION = "postgres"
 # Environment-aware dataset naming
 # DATA_ENV can be: dev, staging, prod
 import os
+
 DATA_ENV = os.getenv("DATA_ENV", "dev")
 
 # Dataset name follows pattern: raw_{env} for ingestion
@@ -74,6 +75,32 @@ DATASET_NAME = f"raw_{DATA_ENV}"
 
 # Legacy dataset name (for backward compatibility)
 LEGACY_DATASET_NAME = "nba"
+
+# =============================================================================
+# DLT POSTGRES CREDENTIALS
+# =============================================================================
+# dlt expects pipeline-specific env vars (e.g. NBA_STATS__DESTINATION__POSTGRES__CREDENTIALS__*)
+# or the generic DESTINATION__POSTGRES__CREDENTIALS__*. When running Dagster locally or
+# without Docker, set POSTGRES_* in .env; we backfill the dlt vars from those so one
+# config drives both scripts and dlt. Docker Compose sets the NBA_STATS__* vars explicitly.
+
+
+def _ensure_dlt_postgres_credentials() -> None:
+    """Set dlt Postgres credential env vars from POSTGRES_* when not already set."""
+    prefix = "DESTINATION__POSTGRES__CREDENTIALS"
+    defaults = {
+        f"{prefix}__HOST": os.getenv("POSTGRES_HOST", "localhost"),
+        f"{prefix}__PORT": str(os.getenv("POSTGRES_PORT", "5432")),
+        f"{prefix}__DATABASE": os.getenv("POSTGRES_DB", "nba_analytics"),
+        f"{prefix}__USERNAME": os.getenv("POSTGRES_USER", "postgres"),
+        f"{prefix}__PASSWORD": os.getenv("POSTGRES_PASSWORD", "postgres"),
+    }
+    for key, value in defaults.items():
+        if key not in os.environ and value:
+            os.environ[key] = value
+
+
+_ensure_dlt_postgres_credentials()
 
 
 # =============================================================================

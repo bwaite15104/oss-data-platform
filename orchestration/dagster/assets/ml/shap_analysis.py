@@ -18,10 +18,13 @@ else:
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Import training asset for dependency reference
+# Import training asset and mart table name
 from .training import train_game_winner_model
+from orchestration.dagster.assets.transformation import MART_GAME_FEATURES_TABLE
 
 logger = logging.getLogger(__name__)
+
+MART_FEATURES_TABLE = os.getenv("MART_FEATURES_TABLE", MART_GAME_FEATURES_TABLE)
 
 
 class SHAPAnalysisConfig(Config):
@@ -129,7 +132,7 @@ def analyze_feature_importance_shap(context, config: SHAPAnalysisConfig) -> dict
                     p.game_id,
                     {', '.join([f'gf.{col}' for col in feature_cols])}
                 FROM ml_dev.predictions p
-                JOIN features_dev.game_features gf ON p.game_id = gf.game_id
+                JOIN {MART_FEATURES_TABLE} gf ON p.game_id = gf.game_id
                 ORDER BY p.predicted_at DESC
                 LIMIT %s
             """
@@ -144,7 +147,7 @@ def analyze_feature_importance_shap(context, config: SHAPAnalysisConfig) -> dict
                 SELECT 
                     game_id,
                     {', '.join([f'{col}' for col in feature_cols])}
-                FROM features_dev.game_features
+                FROM {MART_FEATURES_TABLE}
                 WHERE home_score IS NOT NULL
                   AND away_score IS NOT NULL
                   AND home_win IS NOT NULL

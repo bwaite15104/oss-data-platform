@@ -31,7 +31,7 @@ python scripts/sqlmesh_backfill.py marts.mart_game_features
 python scripts/sqlmesh_backfill.py marts.mart_game_features --start 2015-01-01
 
 # Backfill a chain of models (upstream first)
-python scripts/sqlmesh_backfill.py marts.mart_game_features features_dev.game_features
+python scripts/sqlmesh_backfill.py marts.mart_game_features
 
 # From Docker container
 docker exec nba_analytics_dagster_webserver python /app/scripts/sqlmesh_backfill.py marts.mart_game_features
@@ -39,11 +39,8 @@ docker exec nba_analytics_dagster_webserver python /app/scripts/sqlmesh_backfill
 
 **Using SQLMesh directly:**
 ```bash
-# Force backfill from a specific date
+# Force backfill from a specific date (ML reads from marts.mart_game_features)
 sqlmesh plan local --backfill --start 2010-10-01 --select-model marts.mart_game_features --auto-apply
-
-# Then rematerialize downstream
-sqlmesh plan local --backfill --start 2010-10-01 --select-model features_dev.game_features --auto-apply
 ```
 
 **Using Dagster (with backfill support):**
@@ -58,15 +55,15 @@ Use the table_diff script to compare expected vs actual state:
 
 ```bash
 # Compare state for a model
-python scripts/sqlmesh_table_diff.py features_dev.game_features
+python scripts/sqlmesh_table_diff.py marts.mart_game_features
 
 # From Docker container
-docker exec nba_analytics_dagster_webserver python /app/scripts/sqlmesh_table_diff.py features_dev.game_features
+docker exec nba_analytics_dagster_webserver python /app/scripts/sqlmesh_table_diff.py marts.mart_game_features
 ```
 
 Or use SQLMesh directly:
 ```bash
-sqlmesh table_diff local features_dev.game_features
+sqlmesh table_diff local marts.mart_game_features
 ```
 
 #### Option 3: Drop and Recreate Snapshots (Last Resort)
@@ -102,19 +99,16 @@ SQLMesh stores its state in the database:
 sqlmesh info
 
 # Check specific model
-sqlmesh info --select-model features_dev.game_features
+sqlmesh info --select-model marts.mart_game_features
 
 # Compare expected vs actual
-sqlmesh table_diff local features_dev.game_features
+sqlmesh table_diff local marts.mart_game_features
 ```
 
 ### Force Rematerialization
 ```bash
 # Single model
-python scripts/sqlmesh_backfill.py features_dev.game_features
-
-# Multiple models (dependency order)
-python scripts/sqlmesh_backfill.py marts.mart_game_features features_dev.game_features
+python scripts/sqlmesh_backfill.py marts.mart_game_features
 ```
 
 ### Monitor Execution

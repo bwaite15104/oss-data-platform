@@ -3,11 +3,20 @@
 Load raw_dev tables from CSV exports produced by export_raw_tables.py.
 Run on the target machine after copying the export directory (e.g. from shared drive).
 
+The raw_dev schema and tables (games, injuries, teams, players, boxscores, team_boxscores)
+are normally created by the Dagster dlt ingestion assets when you materialize them
+(nba_teams, nba_games, nba_boxscores, nba_team_boxscores, nba_injuries, etc.). This
+script only loads CSV data into existing tables; it does not create them.
+
 Expects CSV files in a directory: games.csv, injuries.csv, teams.csv, players.csv,
-boxscores.csv, team_boxscores.csv.
+boxscores.csv, team_boxscores.csv. Loads all tables that Dagster transformation
+assets depend on, including injuries (used by int_game_injury_features and
+team_injury_features).
 
 Usage:
   python scripts/load_raw_tables.py --data-dir DIR [--truncate] [--docker]
+  # Load from Code Data (sibling of repo)
+  python scripts/load_raw_tables.py --data-dir "../Code Data/raw_dev_export" [--truncate]
   # Load into local DB
   python scripts/load_raw_tables.py --data-dir ./data/raw_dev_export
   # Truncate then load (replace existing data)
@@ -71,8 +80,8 @@ def main():
     parser = argparse.ArgumentParser(description="Load raw_dev tables from CSV exports")
     parser.add_argument(
         "--data-dir",
-        required=True,
-        help="Directory containing table CSV files (e.g. games.csv, injuries.csv, ...)",
+        default=os.getenv("RAW_EXPORT_DATA_DIR"),
+        help="Directory containing table CSV files (default: RAW_EXPORT_DATA_DIR env, e.g. '../Code Data/raw_dev_export')",
     )
     parser.add_argument(
         "--schema",
@@ -90,6 +99,9 @@ def main():
         help="Use POSTGRES_HOST=postgres (for running inside Docker network)",
     )
     args = parser.parse_args()
+
+    if not args.data_dir:
+        parser.error("--data-dir is required (or set RAW_EXPORT_DATA_DIR)")
 
     if args.docker:
         os.environ.setdefault("POSTGRES_HOST", "postgres")

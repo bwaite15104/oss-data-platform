@@ -41,7 +41,7 @@ def run_table_diff(
     Run SQLMesh table_diff for a specific model.
     
     Args:
-        model_name: Full model name (e.g., "features_dev.game_features")
+        model_name: Full model name (e.g., "marts.mart_game_features")
         gateway: SQLMesh gateway/environment name
         project_path: Path to SQLMesh project (defaults to transformation/sqlmesh)
         environment: Optional environment to compare (defaults to gateway)
@@ -114,19 +114,19 @@ def main():
         epilog="""
 Examples:
   # Compare state for a model
-  python scripts/sqlmesh_table_diff.py features_dev.game_features
+  python scripts/sqlmesh_table_diff.py marts.mart_game_features
 
   # Compare with specific environment
-  python scripts/sqlmesh_table_diff.py features_dev.game_features --environment prod
+  python scripts/sqlmesh_table_diff.py marts.mart_game_features --environment prod
 
   # Run from Docker container
-  docker exec nba_analytics_dagster_webserver python /app/scripts/sqlmesh_table_diff.py features_dev.game_features
+  docker exec nba_analytics_dagster_webserver python /app/scripts/sqlmesh_table_diff.py marts.mart_game_features
         """
     )
     
     parser.add_argument(
         "model",
-        help="Model name to compare (e.g., features_dev.game_features)"
+        help="Model name to compare (e.g., marts.mart_game_features)"
     )
     
     parser.add_argument(

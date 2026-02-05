@@ -189,8 +189,8 @@ Examples:
   # Backfill with custom start date
   python scripts/sqlmesh_backfill.py marts.mart_game_features --start 2015-01-01
 
-  # Backfill a chain of models (upstream first)
-  python scripts/sqlmesh_backfill.py marts.mart_game_features features_dev.game_features
+  # Backfill mart (ML reads from marts.mart_game_features directly)
+  python scripts/sqlmesh_backfill.py marts.mart_game_features
 
   # Dry run (no auto-apply)
   python scripts/sqlmesh_backfill.py marts.mart_game_features --no-auto-apply

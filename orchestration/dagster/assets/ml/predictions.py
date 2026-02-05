@@ -19,9 +19,11 @@ if str(project_root) not in sys.path:
 
 # Import training and transformation assets for dependency references
 from .training import train_game_winner_model
-from orchestration.dagster.assets.transformation import game_features
+from orchestration.dagster.assets.transformation import mart_game_features, MART_GAME_FEATURES_TABLE
 
 logger = logging.getLogger(__name__)
+
+MART_FEATURES_TABLE = os.getenv("MART_FEATURES_TABLE", MART_GAME_FEATURES_TABLE)
 
 
 class PredictionConfig(Config):
@@ -36,7 +38,7 @@ class PredictionConfig(Config):
 @asset(
     group_name="ml_pipeline",
     description="Generate predictions for upcoming NBA games using trained model",
-    deps=[train_game_winner_model, game_features],  # Depend on trained model and updated game features
+    deps=[train_game_winner_model, mart_game_features],  # Depend on trained model and updated game features
     automation_condition=AutomationCondition.eager(),  # Run when model updates OR when new games available
 )
 def generate_game_predictions(context, config: PredictionConfig) -> dict:
@@ -45,7 +47,7 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
     
     Process:
     1. Load latest trained model from ml_dev.model_registry
-    2. Load features for upcoming games from features_dev.game_features
+    2. Load features for upcoming games from MART_FEATURES_TABLE (default marts__local.mart_game_features)
     3. Generate predictions
     4. Store predictions in ml_dev.predictions
     
@@ -218,106 +220,10 @@ def generate_game_predictions(context, config: PredictionConfig) -> dict:
             date_filter = "gf.game_date >= CURRENT_DATE AND (gf.home_score IS NULL OR gf.away_score IS NULL)"
             context.log.info("Production: predicting future games without scores")
         
+        # Mart already includes all momentum and other features; select same shape as training (gf.*).
         query = f"""
-            SELECT 
-                gf.game_id,
-                gf.game_date,
-                gf.home_team_id,
-                gf.away_team_id,
-                -- Rolling 5-game features
-                gf.home_rolling_5_ppg,
-                gf.away_rolling_5_ppg,
-                gf.home_rolling_5_win_pct,
-                gf.away_rolling_5_win_pct,
-                gf.home_rolling_5_opp_ppg,
-                gf.away_rolling_5_opp_ppg,
-                -- Rolling 10-game features
-                gf.home_rolling_10_ppg,
-                gf.away_rolling_10_ppg,
-                gf.home_rolling_10_win_pct,
-                gf.away_rolling_10_win_pct,
-                -- Feature differences
-                gf.ppg_diff_5,
-                gf.win_pct_diff_5,
-                gf.fg_pct_diff_5,
-                gf.ppg_diff_10,
-                gf.win_pct_diff_10,
-                -- Season-level features
-                gf.home_season_win_pct,
-                gf.away_season_win_pct,
-                gf.season_win_pct_diff,
-                -- Star player return features (removed redundant: home_has_star_return, away_has_star_return, star_return_advantage)
-                gf.home_star_players_returning,
-                gf.home_key_players_returning,
-                gf.home_extended_returns,
-                gf.home_total_return_impact,
-                gf.home_max_days_since_return,
-                gf.away_star_players_returning,
-                gf.away_key_players_returning,
-                gf.away_extended_returns,
-                gf.away_total_return_impact,
-                gf.away_max_days_since_return,
-                gf.return_impact_diff,
-                -- Injury features
-                gf.home_star_players_out,
-                gf.home_key_players_out,
-                gf.home_star_players_doubtful,
-                gf.home_key_players_doubtful,
-                gf.home_star_players_questionable,
-                gf.home_injury_impact_score,
-                gf.home_injured_players_count,
-                gf.home_has_key_injury,
-                gf.away_star_players_out,
-                gf.away_key_players_out,
-                gf.away_star_players_doubtful,
-                gf.away_key_players_doubtful,
-                gf.away_star_players_questionable,
-                gf.away_injury_impact_score,
-                gf.away_injured_players_count,
-                gf.away_has_key_injury,
-                gf.injury_advantage_home,
-                gf.star_players_out_diff,
-                -- Feature interactions: Injury impact with other key features
-                gf.injury_impact_x_form_diff,
-                gf.away_injury_x_form,
-                gf.home_injury_x_form,
-                gf.home_injury_impact_ratio,
-                gf.away_injury_impact_ratio,
-                -- Explicit injury penalty features (v4 - continuous, stronger)
-                gf.home_injury_penalty_severe,
-                gf.away_injury_penalty_severe,
-                gf.home_injury_penalty_absolute,
-                gf.away_injury_penalty_absolute,
-                -- NEW: Momentum/Streak features (Phase 1)
-                COALESCE(mf.home_win_streak, 0) AS home_win_streak,
-                COALESCE(mf.home_loss_streak, 0) AS home_loss_streak,
-                COALESCE(mf.away_win_streak, 0) AS away_win_streak,
-                COALESCE(mf.away_loss_streak, 0) AS away_loss_streak,
-                COALESCE(mf.home_momentum_score, 0) AS home_momentum_score,
-                COALESCE(mf.away_momentum_score, 0) AS away_momentum_score,
-                -- NEW: Rest days features (Phase 1)
-                COALESCE(mf.home_rest_days, 0) AS home_rest_days,
-                COALESCE(mf.home_back_to_back, FALSE) AS home_back_to_back,
-                COALESCE(mf.away_rest_days, 0) AS away_rest_days,
-                COALESCE(mf.away_back_to_back, FALSE) AS away_back_to_back,
-                COALESCE(mf.rest_advantage, 0) AS rest_advantage,
-                -- NEW: Form divergence features (Phase 1)
-                COALESCE(mf.home_form_divergence, 0) AS home_form_divergence,
-                COALESCE(mf.away_form_divergence, 0) AS away_form_divergence,
-                -- NEW: Head-to-head features (Phase 2)
-                COALESCE(mf.home_h2h_win_pct, 0.5) AS home_h2h_win_pct,
-                COALESCE(mf.home_h2h_recent_wins, 0) AS home_h2h_recent_wins,
-                -- NEW: Opponent quality features (Phase 2)
-                COALESCE(mf.home_recent_opp_avg_win_pct, 0.5) AS home_recent_opp_avg_win_pct,
-                COALESCE(mf.away_recent_opp_avg_win_pct, 0.5) AS away_recent_opp_avg_win_pct,
-                COALESCE(mf.home_performance_vs_quality, 0.5) AS home_performance_vs_quality,
-                COALESCE(mf.away_performance_vs_quality, 0.5) AS away_performance_vs_quality,
-                -- NEW: Home/Road performance features (Phase 2)
-                COALESCE(mf.home_home_win_pct, 0.5) AS home_home_win_pct,
-                COALESCE(mf.away_road_win_pct, 0.5) AS away_road_win_pct,
-                COALESCE(mf.home_advantage, 0) AS home_advantage
-            FROM marts.mart_game_features gf
-            LEFT JOIN intermediate.int_game_momentum_features mf ON mf.game_id = gf.game_id
+            SELECT gf.*
+            FROM {MART_FEATURES_TABLE} gf
             WHERE {date_filter}
             ORDER BY gf.game_date
         """

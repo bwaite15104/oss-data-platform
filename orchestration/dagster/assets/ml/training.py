@@ -19,10 +19,26 @@ else:
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-# Import transformation asset for dependency
-from orchestration.dagster.assets.transformation import game_features
+# Import transformation asset and single source of truth for mart table name
+from orchestration.dagster.assets.transformation import mart_game_features, MART_GAME_FEATURES_TABLE
 
 logger = logging.getLogger(__name__)
+
+# Use same table the mart_game_features asset writes to (override via env for prod).
+MART_FEATURES_TABLE = os.getenv("MART_FEATURES_TABLE", MART_GAME_FEATURES_TABLE)
+
+
+def _is_docker() -> bool:
+    """True when running inside a Docker container (e.g. Dagster worker)."""
+    if os.getenv("DAGSTER_IN_DOCKER") == "1":
+        return True
+    try:
+        return Path("/.dockerenv").exists() or (
+            Path("/proc/1/cgroup").exists()
+            and "docker" in Path("/proc/1/cgroup").read_text()
+        )
+    except Exception:
+        return False
 
 
 class ModelTrainingConfig(Config):
@@ -57,7 +73,7 @@ class ModelTrainingConfig(Config):
 @asset(
     group_name="ml_pipeline",
     description="Train XGBoost model for game winner prediction",
-    deps=[game_features],  # Depend on game features being ready
+    deps=[mart_game_features],  # Depend on mart game features being ready
     automation_condition=AutomationCondition.on_cron("@daily"),  # Daily retrain (can be adjusted to weekly/monthly)
 )
 def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
@@ -65,7 +81,7 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
     Train XGBoost model to predict game winners.
     
     Process:
-    1. Load training features from features_dev.game_features
+    1. Load training features from MART_FEATURES_TABLE (default marts__local.mart_game_features)
     2. Split into train/test sets
     3. Train XGBoost classifier
     4. Evaluate performance
@@ -88,9 +104,9 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         raise
     
     try:
-        # Database connection using SQLAlchemy (better pandas compatibility)
+        # Database connection (use host 'postgres' in Docker so worker can reach DB)
         database = os.getenv("POSTGRES_DB", "nba_analytics")
-        host = os.getenv("POSTGRES_HOST", "localhost")
+        host = "postgres" if _is_docker() else os.getenv("POSTGRES_HOST", "localhost")
         port = int(os.getenv("POSTGRES_PORT", "5432"))
         user = os.getenv("POSTGRES_USER", "postgres")
         password = os.getenv("POSTGRES_PASSWORD", "postgres")
@@ -117,7 +133,7 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         mlflow.set_experiment("nba_game_winner_prediction")
         
         context.log.info(f"MLflow tracking URI: {mlflow_tracking_uri}")
-        context.log.info("Loading training features from features_dev.game_features...")
+        context.log.info(f"Loading training features from {MART_FEATURES_TABLE}...")
         
         # Get today's date in Eastern timezone (NBA games are scheduled in ET)
         # Exclude today's games from training (use for predictions/testing)
@@ -141,35 +157,10 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
             date_filter = f"AND gf.game_date::date < '{today_str}'::date"
             context.log.info(f"Training on games before {today_str} (exclusive)")
         
-        # Load features - use SELECT * to handle missing columns gracefully
-        # This allows training to work even if some features haven't been materialized yet
+        # Load features from mart only (mart already includes momentum and all other features).
         query = f"""
-            SELECT 
-                gf.*,
-                mf.home_win_streak,
-                mf.home_loss_streak,
-                mf.away_win_streak,
-                mf.away_loss_streak,
-                mf.home_momentum_score,
-                mf.away_momentum_score,
-                mf.home_rest_days,
-                mf.home_back_to_back,
-                mf.away_rest_days,
-                mf.away_back_to_back,
-                mf.rest_advantage,
-                mf.home_form_divergence,
-                mf.away_form_divergence,
-                mf.home_h2h_win_pct,
-                mf.home_h2h_recent_wins,
-                mf.home_recent_opp_avg_win_pct,
-                mf.away_recent_opp_avg_win_pct,
-                mf.home_performance_vs_quality,
-                mf.away_performance_vs_quality,
-                mf.home_home_win_pct,
-                mf.away_road_win_pct,
-                mf.home_advantage
-            FROM features_dev.game_features gf
-            LEFT JOIN intermediate.int_game_momentum_features mf ON mf.game_id = gf.game_id
+            SELECT gf.*
+            FROM {MART_FEATURES_TABLE} gf
             WHERE gf.game_date IS NOT NULL
               AND gf.home_score IS NOT NULL
               AND gf.away_score IS NOT NULL
@@ -179,11 +170,36 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
             ORDER BY gf.game_date
         """
         
-        # Use SQLAlchemy engine for pandas (better compatibility)
         df = pd.read_sql_query(query, engine)
         
         if len(df) == 0:
-            raise ValueError("No training data available in features_dev.game_features")
+            # Diagnose: total rows in mart vs rows matching training filters
+            try:
+                diag = pd.read_sql_query(f"""
+                    SELECT
+                        COUNT(*) AS total_rows,
+                        COUNT(*) FILTER (WHERE game_date IS NOT NULL AND home_score IS NOT NULL AND away_score IS NOT NULL AND home_win IS NOT NULL) AS completed_rows,
+                        COUNT(*) FILTER (WHERE game_date IS NOT NULL AND home_score IS NOT NULL AND away_score IS NOT NULL AND home_win IS NOT NULL
+                            AND game_date::date >= '2010-10-01'::date AND game_date::date < '{today_str}'::date) AS trainable_rows,
+                        MIN(game_date)::text AS min_date,
+                        MAX(game_date)::text AS max_date
+                    FROM {MART_FEATURES_TABLE}
+                """, engine).iloc[0]
+                total, completed, trainable = int(diag["total_rows"]), int(diag["completed_rows"]), int(diag["trainable_rows"])
+                min_d, max_d = diag["min_date"], diag["max_date"]
+                raise ValueError(
+                    f"No training data available in {MART_FEATURES_TABLE}. "
+                    f"Diagnostics: total_rows={total}, completed_rows={completed}, trainable_rows (2010-10-01 to <{today_str})={trainable}, "
+                    f"date_range=[{min_d}, {max_d}]. "
+                    f"Materialize the mart_game_features asset and backfill at least 2010-10-01 onward, or check that games have home_score/away_score/home_win set."
+                )
+            except ValueError:
+                raise
+            except Exception as e:
+                raise ValueError(
+                    f"No training data available in {MART_FEATURES_TABLE}. "
+                    f"(Diagnostic query failed: {e}). Materialize mart_game_features and backfill from 2010-10-01."
+                )
         
         context.log.info(f"Loaded {len(df)} training samples with {len(df.columns)} columns")
         
@@ -197,7 +213,7 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
         feature_cols = [col for col in feature_cols if col in df.columns]
         
         if len(feature_cols) == 0:
-            raise ValueError("No valid feature columns found in game_features")
+            raise ValueError("No valid feature columns found in mart_game_features")
         
         X = df[feature_cols].copy()
         
@@ -622,6 +638,7 @@ def train_game_winner_model(context, config: ModelTrainingConfig) -> dict:
             context.log.info(f"After feature selection: {len(interaction_features)} interaction/injury features remain")
         
         # Train model: XGBoost, LightGBM, or Ensemble
+        num_leaves = None  # Only used for LightGBM/ensemble; set in those branches
         if algorithm == "ensemble":
             # Ensemble: Train both XGBoost and LightGBM, combine with stacking (iteration 7)
             # Stacking learns how to best combine base models using a meta-learner, which can outperform voting

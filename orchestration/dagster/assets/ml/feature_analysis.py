@@ -19,9 +19,24 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # Import transformation asset for dependency
-from orchestration.dagster.assets.transformation import game_features
+from orchestration.dagster.assets.transformation import mart_game_features, MART_GAME_FEATURES_TABLE
 
 logger = logging.getLogger(__name__)
+
+MART_FEATURES_TABLE = os.getenv("MART_FEATURES_TABLE", MART_GAME_FEATURES_TABLE)
+
+
+def _is_docker() -> bool:
+    """True when running inside a Docker container (e.g. Dagster worker)."""
+    if os.getenv("DAGSTER_IN_DOCKER") == "1":
+        return True
+    try:
+        return Path("/.dockerenv").exists() or (
+            Path("/proc/1/cgroup").exists()
+            and "docker" in Path("/proc/1/cgroup").read_text()
+        )
+    except Exception:
+        return False
 
 
 class FeatureAnalysisConfig(Config):
@@ -33,7 +48,7 @@ class FeatureAnalysisConfig(Config):
 @asset(
     group_name="ml_pipeline",
     description="Analyze feature correlations and similarities to identify redundant features for feature selection",
-    deps=[game_features],  # Depend on game features being ready
+    deps=[mart_game_features],  # Depend on mart game features being ready
     automation_condition=AutomationCondition.on_cron("@weekly"),  # Weekly analysis (less frequent than training)
 )
 def analyze_feature_correlations(context, config: FeatureAnalysisConfig) -> dict:
@@ -46,7 +61,7 @@ def analyze_feature_correlations(context, config: FeatureAnalysisConfig) -> dict
     3. Feature groups that might be redundant
     
     Process:
-    1. Load features from features_dev.game_features
+    1. Load features from MART_FEATURES_TABLE (default marts__local.mart_game_features)
     2. Calculate correlation matrix
     3. Identify highly correlated feature pairs
     4. Compare with feature importances from latest model
@@ -65,9 +80,9 @@ def analyze_feature_correlations(context, config: FeatureAnalysisConfig) -> dict
         raise
     
     try:
-        # Database connection
+        # Database connection (use host 'postgres' in Docker so worker can reach DB)
         database = os.getenv("POSTGRES_DB", "nba_analytics")
-        host = os.getenv("POSTGRES_HOST", "localhost")
+        host = "postgres" if _is_docker() else os.getenv("POSTGRES_HOST", "localhost")
         
         conn = psycopg2.connect(
             host=host,
@@ -80,8 +95,8 @@ def analyze_feature_correlations(context, config: FeatureAnalysisConfig) -> dict
         
         context.log.info("Starting feature correlation analysis...")
         
-        # Load all features from game_features
-        query = """
+        # Load all features from mart (SQLMesh local: marts__local.mart_game_features)
+        query = f"""
             SELECT 
                 game_id,
                 game_date,
@@ -133,7 +148,7 @@ def analyze_feature_correlations(context, config: FeatureAnalysisConfig) -> dict
                 return_impact_diff,
                 -- Target variable (for correlation with target)
                 home_win
-            FROM features_dev.game_features
+            FROM {MART_FEATURES_TABLE}
             WHERE game_date IS NOT NULL
               AND home_score IS NOT NULL
               AND away_score IS NOT NULL

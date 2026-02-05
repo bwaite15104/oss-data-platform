@@ -1,36 +1,22 @@
-"""Force rebuild of features_dev.game_features."""
+"""Force rebuild of marts.mart_game_features (game_features view was removed)."""
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import subprocess
+import sys
+from pathlib import Path
 
-conn = psycopg2.connect(
-    host='localhost',
-    port=5432,
-    database='nba_analytics',
-    user='postgres',
-    password='postgres',
-)
-cursor = conn.cursor(cursor_factory=RealDictCursor)
+# Project root
+project_root = Path(__file__).resolve().parent.parent
 
-# Find and drop latest snapshot
-cursor.execute("""
-    SELECT table_name
-    FROM information_schema.tables
-    WHERE table_schema = 'features_dev'
-      AND table_name LIKE '%game_features%'
-      AND table_type = 'BASE TABLE'
-    ORDER BY table_name DESC
-    LIMIT 1
-""")
-result = cursor.fetchone()
-if result:
-    snap = result['table_name']
-    print(f"Dropping snapshot: {snap}")
-    cursor.execute(f"DROP TABLE IF EXISTS features_dev.{snap} CASCADE")
-    conn.commit()
-    print("Snapshot dropped. Now run: sqlmesh plan local --auto-apply --select-model features_dev.game_features")
-else:
-    print("No snapshot found")
+def main():
+    print("The features_dev.game_features view was removed.")
+    print("Use marts.mart_game_features directly. To force rebuild the mart:")
+    print("  sqlmesh plan local --auto-apply --select-model marts.mart_game_features")
+    print("\nOr materialize via Dagster: mart_game_features asset.")
+    # Optional: run sqlmesh plan
+    if len(sys.argv) > 1 and sys.argv[1] == "--run":
+        cmd = ["sqlmesh", "plan", "local", "--auto-apply", "--select-model", "marts.mart_game_features"]
+        return subprocess.call(cmd, cwd=str(project_root))
+    return 0
 
-cursor.close()
-conn.close()
+if __name__ == "__main__":
+    sys.exit(main())

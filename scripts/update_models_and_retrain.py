@@ -310,14 +310,13 @@ def main():
     
     # Step 2: Materialize game features using Dagster (preferred method)
     logger.info("\n[Step 2/4] Materializing game features model via Dagster...")
-    game_success = materialize_dagster_asset("game_features")
+    game_success = materialize_dagster_asset("mart_game_features")
     
     if not game_success:
         # Fallback to SQLMesh backfill
         logger.warning("Dagster materialization failed, trying SQLMesh backfill...")
         game_model_names = [
             "marts.mart_game_features",
-            "features_dev.game_features",
         ]
         
         for model_name in game_model_names:
